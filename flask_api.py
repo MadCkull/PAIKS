@@ -1,11 +1,13 @@
 import json
 import os
 import pathlib
+import secrets
+import urllib.parse
+import urllib.request
 
 from flask import Flask, jsonify, request, redirect, session, url_for
 from flask_cors import CORS
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 
 app = Flask(__name__)
@@ -22,9 +24,19 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive.metadata.readonly",
 ]
 
+OAUTH_REDIRECT_URI = "http://localhost/PAIKS/oauth2callback"
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _load_client_config():
+    """Load client_id and client_secret from credentials.json."""
+    data = json.loads(CREDENTIALS_PATH.read_text(encoding="utf-8"))
+    # Handle both 'web' and 'installed' credential types
+    cfg = data.get("web") or data.get("installed") or {}
+    return cfg.get("client_id"), cfg.get("client_secret")
+
 
 def _get_creds():
     """Return valid Credentials or None."""
@@ -65,7 +77,7 @@ def health_check():
 
 
 # ---------------------------------------------------------------------------
-# Auth
+# Auth (manual OAuth 2.0 — no PKCE)
 # ---------------------------------------------------------------------------
 
 @app.get("/auth/status")
@@ -78,30 +90,68 @@ def auth_status():
 def auth_url():
     if not CREDENTIALS_PATH.exists():
         return jsonify({"error": "credentials.json not found. Download it from Google Cloud Console."}), 400
-    flow = Flow.from_client_secrets_file(
-        str(CREDENTIALS_PATH),
-        scopes=SCOPES,
-        redirect_uri="http://127.0.0.1:5001/auth/callback",
-    )
-    authorization_url, state = flow.authorization_url(
-        access_type="offline",
-        include_granted_scopes="true",
-        prompt="consent",
-    )
+    client_id, _ = _load_client_config()
+    if not client_id:
+        return jsonify({"error": "Invalid credentials.json format."}), 400
+
+    state = secrets.token_urlsafe(24)
     session["oauth_state"] = state
-    return jsonify({"url": authorization_url})
+
+    params = {
+        "client_id": client_id,
+        "redirect_uri": OAUTH_REDIRECT_URI,
+        "response_type": "code",
+        "scope": " ".join(SCOPES),
+        "access_type": "offline",
+        "prompt": "consent",
+        "state": state,
+    }
+    auth_uri = "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(params)
+    return jsonify({"url": auth_uri})
 
 
 @app.get("/auth/callback")
 def auth_callback():
-    flow = Flow.from_client_secrets_file(
-        str(CREDENTIALS_PATH),
-        scopes=SCOPES,
-        redirect_uri="http://127.0.0.1:5001/auth/callback",
+    """Receives the auth code forwarded from the Apache bridge."""
+    code = request.args.get("code")
+    if not code:
+        return jsonify({"error": "Missing authorization code"}), 400
+
+    client_id, client_secret = _load_client_config()
+
+    # Exchange auth code for tokens via direct POST (no PKCE needed)
+    token_data = urllib.parse.urlencode({
+        "code": code,
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "redirect_uri": OAUTH_REDIRECT_URI,
+        "grant_type": "authorization_code",
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        "https://oauth2.googleapis.com/token",
+        data=token_data,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
-    flow.fetch_token(authorization_response=request.url)
-    creds = flow.credentials
-    TOKEN_PATH.write_text(creds.to_json())
+    try:
+        with urllib.request.urlopen(req) as resp:
+            token_response = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode("utf-8")
+        app.logger.error("Token exchange failed: %s", error_body)
+        return jsonify({"error": "Token exchange failed", "details": json.loads(error_body)}), 400
+
+    # Save token in the format google.oauth2.credentials expects
+    token_info = {
+        "token": token_response["access_token"],
+        "refresh_token": token_response.get("refresh_token"),
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "scopes": SCOPES,
+    }
+    TOKEN_PATH.write_text(json.dumps(token_info), encoding="utf-8")
+
     # Redirect back to Django home
     return redirect("http://127.0.0.1:8000/?connected=1")
 
@@ -125,28 +175,32 @@ def drive_files():
     if not creds:
         return jsonify({"error": "Not authenticated"}), 401
 
-    page_token = request.args.get("pageToken")
-    page_size = int(request.args.get("pageSize", 20))
-    query = request.args.get("q", "")
+    try:
+        page_token = request.args.get("pageToken")
+        page_size = int(request.args.get("pageSize", 20))
+        query = request.args.get("q", "")
 
-    service = _drive_service(creds)
-    params = {
-        "pageSize": page_size,
-        "fields": "nextPageToken, files(id, name, mimeType, modifiedTime, size, iconLink, webViewLink, thumbnailLink)",
-        "orderBy": "modifiedTime desc",
-    }
-    if page_token:
-        params["pageToken"] = page_token
-    if query:
-        params["q"] = f"name contains '{query}' and trashed = false"
-    else:
-        params["q"] = "trashed = false"
+        service = _drive_service(creds)
+        params = {
+            "pageSize": page_size,
+            "fields": "nextPageToken, files(id, name, mimeType, modifiedTime, size, iconLink, webViewLink, thumbnailLink)",
+            "orderBy": "modifiedTime desc",
+        }
+        if page_token:
+            params["pageToken"] = page_token
+        if query:
+            params["q"] = f"name contains '{query}' and trashed = false"
+        else:
+            params["q"] = "trashed = false"
 
-    results = service.files().list(**params).execute()
-    return jsonify({
-        "files": results.get("files", []),
-        "nextPageToken": results.get("nextPageToken"),
-    })
+        results = service.files().list(**params).execute()
+        return jsonify({
+            "files": results.get("files", []),
+            "nextPageToken": results.get("nextPageToken"),
+        })
+    except Exception as e:
+        app.logger.error("drive_files error: %s", str(e))
+        return jsonify({"error": str(e)}), 500
 
 
 @app.post("/drive/sync")
