@@ -13,60 +13,182 @@
         rel="stylesheet" />
     <link rel="stylesheet" href="{% static 'assistant/css/styles.css' %}" />
     <style>
+        /* ---------- Full-page centered layout ---------- */
         body {
             display: flex;
             align-items: center;
             justify-content: center;
             min-height: 100vh;
+            margin: 0;
+            padding: 16px;
             flex-direction: column;
+            gap: 0;
         }
 
-        .login-container {
+        .login-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
             width: 100%;
-            max-width: 480px;
+            max-width: 440px;
             text-align: center;
         }
 
+        /* ---------- Brand ---------- */
         .login-brand {
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 10px;
-            margin-bottom: 32px;
-            font-size: 1.4rem;
-            font-weight: 700;
+            gap: 12px;
+            margin-bottom: 8px;
+            font-size: 1.6rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            color: #fff;
         }
 
         .login-brand .logo-icon {
-            width: 42px;
-            height: 42px;
-            border-radius: var(--radius-sm);
+            width: 48px;
+            height: 48px;
+            border-radius: 14px;
             background: linear-gradient(135deg, var(--accent), #a855f7);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.3rem;
+            font-size: 1.5rem;
             color: #fff;
-            box-shadow: 0 8px 24px var(--accent-glow);
+            box-shadow: 0 8px 32px var(--accent-glow);
         }
 
         .login-subtitle {
-            font-size: .92rem;
+            font-size: 0.95rem;
             color: var(--text-muted);
-            margin-bottom: 28px;
+            margin-bottom: 32px;
+            line-height: 1.5;
         }
 
+        /* ---------- Clerk container ---------- */
         #clerk-sign-in {
             display: flex;
             justify-content: center;
+            width: 100%;
         }
 
-        /* Loading state */
+        /* ---------- Loading spinner ---------- */
         .login-loading {
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 48px;
+            padding: 60px 0;
+        }
+
+        /* ---------- Override Clerk card to match dark theme ---------- */
+        .cl-card {
+            background: rgba(255, 255, 255, 0.04) !important;
+            border: 1px solid rgba(255, 255, 255, 0.08) !important;
+            backdrop-filter: blur(24px) !important;
+            -webkit-backdrop-filter: blur(24px) !important;
+            border-radius: 20px !important;
+            box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4) !important;
+        }
+
+        .cl-headerTitle {
+            color: #fff !important;
+        }
+
+        .cl-headerSubtitle,
+        .cl-footerActionText,
+        .cl-dividerText {
+            color: rgba(255, 255, 255, 0.5) !important;
+        }
+
+        .cl-footerActionLink {
+            color: var(--accent-light, #60a5fa) !important;
+        }
+
+        .cl-formFieldLabel {
+            color: rgba(255, 255, 255, 0.7) !important;
+        }
+
+        .cl-formFieldInput,
+        .cl-input {
+            background: rgba(255, 255, 255, 0.06) !important;
+            border: 1px solid rgba(255, 255, 255, 0.12) !important;
+            color: #fff !important;
+            border-radius: 12px !important;
+        }
+
+        .cl-formFieldInput::placeholder {
+            color: rgba(255, 255, 255, 0.35) !important;
+        }
+
+        .cl-formFieldInput:focus,
+        .cl-input:focus {
+            border-color: var(--accent, #3b82f6) !important;
+            box-shadow: 0 0 0 3px var(--accent-glow, rgba(59, 130, 246, 0.15)) !important;
+        }
+
+        .cl-formButtonPrimary {
+            background: linear-gradient(135deg, var(--accent, #3b82f6), #a855f7) !important;
+            border: none !important;
+            border-radius: 12px !important;
+            font-weight: 600 !important;
+            box-shadow: 0 4px 16px var(--accent-glow, rgba(59, 130, 246, 0.3)) !important;
+            transition: transform .15s, box-shadow .15s !important;
+        }
+
+        .cl-formButtonPrimary:hover {
+            transform: translateY(-1px) !important;
+            box-shadow: 0 6px 24px var(--accent-glow, rgba(59, 130, 246, 0.4)) !important;
+        }
+
+        .cl-socialButtonsBlockButton {
+            background: rgba(255, 255, 255, 0.06) !important;
+            border: 1px solid rgba(255, 255, 255, 0.12) !important;
+            color: #fff !important;
+            border-radius: 12px !important;
+            transition: background .2s !important;
+        }
+
+        .cl-socialButtonsBlockButton:hover {
+            background: rgba(255, 255, 255, 0.1) !important;
+        }
+
+        .cl-socialButtonsBlockButtonText {
+            color: #fff !important;
+        }
+
+        .cl-dividerLine {
+            background: rgba(255, 255, 255, 0.1) !important;
+        }
+
+        .cl-cardBox {
+            background: transparent !important;
+            box-shadow: none !important;
+        }
+
+        .cl-footer {
+            background: transparent !important;
+        }
+
+        .cl-internal-pe6vm4,
+        .cl-internal-1dauvpw {
+            border-top-color: rgba(255, 255, 255, 0.06) !important;
+        }
+
+        .cl-formFieldInputShowPasswordButton {
+            color: rgba(255, 255, 255, 0.4) !important;
+        }
+
+        .cl-formFieldInputShowPasswordButton:hover {
+            color: rgba(255, 255, 255, 0.7) !important;
+        }
+
+        .cl-lastAuthenticationStrategyBadge {
+            background: rgba(59, 130, 246, 0.15) !important;
+            color: var(--accent-light, #60a5fa) !important;
+            border: 1px solid rgba(59, 130, 246, 0.25) !important;
         }
     </style>
 </head>
@@ -74,7 +196,7 @@
 <body>
     <div class="app-bg"></div>
 
-    <div class="login-container">
+    <div class="login-wrapper">
         <div class="login-brand">
             <div class="logo-icon">⚡</div>
             <span>PAIKS</span>
@@ -92,13 +214,13 @@
     <script src="{% static 'assistant/js/clerk_config.js' %}"></script>
     <!-- Clerk SDK -->
     <script>
-        // Dynamically build the Clerk script tag
         (function () {
             if (!CLERK_FRONTEND_API || CLERK_FRONTEND_API === "YOUR_FRONTEND_API_URL") {
                 document.getElementById('clerk-sign-in').innerHTML =
                     '<div class="card" style="padding:24px;text-align:center;">' +
                     '<p style="color:var(--red);font-weight:600;">⚠️ Clerk not configured</p>' +
-                    '<p class="card-helper mt-sm">Update <code>clerk_config.js</code> with your Clerk publishable key and Frontend API URL from <a href="https://dashboard.clerk.com/~/api-keys" target="_blank" style="color:var(--accent-light)">Clerk Dashboard</a>.</p>' +
+                    '<p class="card-helper mt-sm">Update <code>clerk_config.js</code> with your keys from ' +
+                    '<a href="https://dashboard.clerk.com/~/api-keys" target="_blank" style="color:var(--accent-light)">Clerk Dashboard</a>.</p>' +
                     '</div>';
                 return;
             }
@@ -112,7 +234,6 @@
             document.head.appendChild(script);
 
             window.addEventListener('load', async function () {
-                // Wait for Clerk to be available
                 const waitForClerk = () => new Promise((resolve) => {
                     if (window.Clerk) return resolve();
                     const interval = setInterval(() => {
@@ -121,20 +242,46 @@
                 });
 
                 await waitForClerk();
-                await Clerk.load();
+                await Clerk.load({
+                    appearance: {
+                        variables: {
+                            colorPrimary: '#3b82f6',
+                            colorBackground: 'rgba(255,255,255,0.04)',
+                            colorText: '#ffffff',
+                            colorTextSecondary: 'rgba(255,255,255,0.5)',
+                            colorInputBackground: 'rgba(255,255,255,0.06)',
+                            colorInputText: '#ffffff',
+                            borderRadius: '12px',
+                            fontFamily: 'Inter, sans-serif',
+                        },
+                        elements: {
+                            rootBox: { width: '100%' },
+                        },
+                    },
+                });
 
                 if (Clerk.isSignedIn) {
-                    // Already signed in, redirect to home
                     window.location.href = '/';
                     return;
                 }
 
-                // Mount sign-in component
                 const signInDiv = document.getElementById('clerk-sign-in');
                 signInDiv.innerHTML = '';
                 Clerk.mountSignIn(signInDiv, {
                     afterSignInUrl: '/',
                     afterSignUpUrl: '/',
+                    appearance: {
+                        variables: {
+                            colorPrimary: '#3b82f6',
+                            colorBackground: 'rgba(255,255,255,0.04)',
+                            colorText: '#ffffff',
+                            colorTextSecondary: 'rgba(255,255,255,0.5)',
+                            colorInputBackground: 'rgba(255,255,255,0.06)',
+                            colorInputText: '#ffffff',
+                            borderRadius: '12px',
+                            fontFamily: 'Inter, sans-serif',
+                        },
+                    },
                 });
             });
         })();
