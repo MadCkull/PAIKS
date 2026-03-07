@@ -1,277 +1,66 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Dashboard · Google Drive AI Assistant</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-      * {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
-      }
-      body {
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-          sans-serif;
-        min-height: 100vh;
-        background: radial-gradient(circle at top, #020617, #020617 40%, #0b1120);
-        color: #e5e7eb;
-        display: flex;
-      }
-      .sidebar {
-        width: 230px;
-        background: rgba(15, 23, 42, 0.95);
-        border-right: 1px solid rgba(30, 64, 175, 0.7);
-        padding: 20px 18px;
-        display: flex;
-        flex-direction: column;
-        gap: 18px;
-      }
-      .logo {
-        font-weight: 650;
-        letter-spacing: 0.06em;
-        font-size: 0.9rem;
-        text-transform: uppercase;
-        color: #a5b4fc;
-      }
-      .nav-section-title {
-        font-size: 0.7rem;
-        text-transform: uppercase;
-        letter-spacing: 0.16em;
-        color: #6b7280;
-        margin-top: 8px;
-        margin-bottom: 4px;
-      }
-      .nav-list {
-        list-style: none;
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-      }
-      .nav-link {
-        display: block;
-        padding: 8px 10px;
-        border-radius: 999px;
-        font-size: 0.86rem;
-        color: #9ca3af;
-        text-decoration: none;
-        transition: all 0.16s ease-out;
-      }
-      .nav-link:hover {
-        background: rgba(30, 64, 175, 0.35);
-        color: #e5e7eb;
-      }
-      .nav-link.active {
-        background: linear-gradient(135deg, #22c55e, #16a34a);
-        color: #ecfdf5;
-      }
-      .nav-footer {
-        margin-top: auto;
-        font-size: 0.75rem;
-        color: #6b7280;
-      }
-      .main {
-        flex: 1;
-        padding: 20px 26px;
-        display: flex;
-        flex-direction: column;
-        gap: 18px;
-      }
-      .main-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-      }
-      .title {
-        font-size: 1.4rem;
-        font-weight: 600;
-      }
-      .subtitle {
-        font-size: 0.9rem;
-        color: #9ca3af;
-        margin-top: 2px;
-      }
-      .pill {
-        font-size: 0.78rem;
-        padding: 5px 10px;
-        border-radius: 999px;
-        border: 1px solid rgba(55, 65, 81, 0.9);
-        color: #9ca3af;
-      }
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 14px;
-      }
-      .card {
-        background: rgba(15, 23, 42, 0.95);
-        border-radius: 14px;
-        padding: 16px 16px 14px;
-        border: 1px solid rgba(30, 64, 175, 0.7);
-        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.8);
-      }
-      .card-label {
-        font-size: 0.75rem;
-        text-transform: uppercase;
-        letter-spacing: 0.14em;
-        color: #9ca3af;
-      }
-      .card-value {
-        font-size: 1.6rem;
-        font-weight: 650;
-        margin-top: 8px;
-      }
-      .card-helper {
-        font-size: 0.78rem;
-        color: #6b7280;
-        margin-top: 4px;
-      }
-      .card-helper strong {
-        color: #a5b4fc;
-      }
-      .chart {
-        margin-top: 10px;
-        height: 140px;
-        border-radius: 10px;
-        background: radial-gradient(
-          circle at top left,
-          rgba(34, 197, 94, 0.24),
-          transparent 55%
-        );
-        border: 1px dashed rgba(55, 65, 81, 0.7);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 0.8rem;
-        color: #6b7280;
-      }
-      .chips {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-        margin-top: 10px;
-      }
-      .chip {
-        font-size: 0.75rem;
-        padding: 4px 9px;
-        border-radius: 999px;
-        background: rgba(31, 41, 55, 0.9);
-        border: 1px solid rgba(55, 65, 81, 0.9);
-        color: #9ca3af;
-      }
-      .chip--green {
-        background: rgba(22, 163, 74, 0.16);
-        border-color: rgba(34, 197, 94, 0.65);
-        color: #bbf7d0;
-      }
-      .footer {
-        font-size: 0.78rem;
-        color: #6b7280;
-        margin-top: auto;
-      }
-      .footer a {
-        color: #a5b4fc;
-        text-decoration: none;
-      }
-      .footer a:hover {
-        text-decoration: underline;
-      }
-      @media (max-width: 900px) {
-        .sidebar {
-          display: none;
-        }
-        .main {
-          padding-inline: 16px;
-        }
-        .grid {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-      }
-      @media (max-width: 640px) {
-        .grid {
-          grid-template-columns: minmax(0, 1fr);
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <aside class="sidebar">
-      <div class="logo">Drive · AI Assistant</div>
-      <div>
-        <p class="nav-section-title">Main</p>
-        <ul class="nav-list">
-          <li>
-            <a class="nav-link" href="{% url 'home' %}">Home</a>
-          </li>
-          <li>
-            <a class="nav-link active" href="{% url 'dashboard' %}"
-              >Dashboard</a
-            >
-          </li>
-        </ul>
-      </div>
-      <div class="nav-footer">
-        Connected workspace:<br />
-        <strong>Google Drive</strong>
-      </div>
-    </aside>
+{% extends "assistant/base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block nav_dashboard %}active{% endblock %}
 
-    <main class="main">
-      <header class="main-header">
-        <div>
-          <h1 class="title">Documents dashboard</h1>
-          <p class="subtitle">
-            Overview of how many documents have been fetched and prepared for
-            AI search.
-          </p>
-        </div>
-        <span class="pill">Last sync: {{ last_sync }}</span>
-      </header>
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Dashboard</h1>
+    <p class="subtitle">Overview of your synced Google Drive documents and activity.</p>
+  </div>
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+    <button id="btn-sync" class="btn btn-success btn-sm" onclick="triggerSync()">🔄 Sync Now</button>
+    <button id="btn-connect" class="btn btn-primary btn-sm" onclick="connectDrive()">🔗 Connect Drive</button>
+    <button id="btn-disconnect" class="btn btn-danger btn-sm hidden" onclick="disconnectDrive()">✕ Disconnect</button>
+  </div>
+</header>
 
-      <section class="grid">
-        <article class="card">
-          <p class="card-label">Total documents fetched</p>
-          <p class="card-value">{{ documents_total }}</p>
-          <p class="card-helper">
-            This is the count of all files pulled from your Google Drive into
-            the assistant.
-          </p>
-        </article>
+<!-- Stat Cards -->
+<section class="grid-3">
+  <article class="card">
+    <p class="card-label">Total Files Synced</p>
+    <p class="card-value" id="stat-total">—</p>
+    <p class="card-helper">Count of all files pulled from your Google Drive.</p>
+  </article>
 
-        <article class="card">
-          <p class="card-label">Documents ready for search</p>
-          <p class="card-value">{{ documents_indexed }}</p>
-          <p class="card-helper">
-            Number of documents that have embeddings generated and are ready for
-            semantic search.
-          </p>
-        </article>
+  <article class="card">
+    <p class="card-label">Last Sync</p>
+    <p class="card-value" style="font-size:1.2rem;" id="stat-synced">—</p>
+    <p class="card-helper">Timestamp of the last successful sync operation.</p>
+  </article>
 
-        <article class="card">
-          <p class="card-label">Sync status</p>
-          <p class="card-helper">
-            When you connect Google Drive and run a sync, this panel will show
-            progress over time.
-          </p>
-          <div class="chart">Sync timeline (placeholder)</div>
-        </article>
-      </section>
+  <article class="card">
+    <p class="card-label">Quick Search</p>
+    <p class="card-helper mt-sm">Search across all your synced documents.</p>
+    <div class="search-row mt-sm">
+      <input id="search-input" class="search-input" placeholder="Search files…" autocomplete="off"
+        style="font-size:.82rem;" />
+      <button id="search-btn" class="btn btn-primary btn-sm">🔍</button>
+    </div>
+  </article>
+</section>
 
-      <section class="card" style="margin-top: 10px">
-        <p class="card-label">Activity summary</p>
-        <div class="chips">
-          <span class="chip chip--green">Connected: Google Drive</span>
-          <span class="chip">Pending: first sync</span>
-          <span class="chip">API: Flask `/search`</span>
-        </div>
-      </section>
+<!-- Search results (if any) -->
+<div id="search-results" class="results-container"></div>
 
-      <footer class="footer">
-        Tip: once we plug in the Google Drive sync service, the values on this
-        dashboard will come directly from your synced documents.
-      </footer>
-    </main>
-  </body>
-</html>
+<!-- File Type Distribution -->
+<section class="card">
+  <p class="card-label">File Type Distribution</p>
+  <p class="card-helper mt-sm">Breakdown of file types synced from your Drive.</p>
+  <div class="chips mt-md" id="stat-types">
+    <span class="badge badge-dim">Sync your Drive to see distribution</span>
+  </div>
+</section>
 
+<!-- Activity summary -->
+<section class="card">
+  <p class="card-label">Activity</p>
+  <div class="chips mt-sm">
+    <span id="auth-status-badge" class="badge badge-dim">
+      <span class="connection-dot disconnected"></span> Checking…
+    </span>
+    <span class="badge badge-accent">API: Flask /search</span>
+    <span class="badge badge-dim">Frontend: Django</span>
+  </div>
+</section>
+{% endblock %}

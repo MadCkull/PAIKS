@@ -1,0 +1,67 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>{% block title %}PAIKS{% endblock %} · Google Drive AI Assistant</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Connect your Google Drive and run AI-powered search over your documents." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="{% static 'assistant/css/styles.css' %}" />
+    {% block extra_head %}{% endblock %}
+  </head>
+  <body>
+    <div class="app-bg"></div>
+
+    <!-- Mobile toggle -->
+    <button class="mobile-toggle" aria-label="Toggle sidebar">☰</button>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <div class="logo-icon">⚡</div>
+        <span>PAIKS</span>
+      </div>
+
+      <nav>
+        <p class="nav-section-title">Navigation</p>
+        <ul class="nav-list">
+          <li>
+            <a class="nav-link {% block nav_home %}{% endblock %}" href="{% url 'home' %}">
+              <span class="nav-icon">🏠</span> Home
+            </a>
+          </li>
+          <li>
+            <a class="nav-link {% block nav_dashboard %}{% endblock %}" href="{% url 'dashboard' %}">
+              <span class="nav-icon">📊</span> Dashboard
+            </a>
+          </li>
+          <li>
+            <a class="nav-link {% block nav_files %}{% endblock %}" href="{% url 'drive_files' %}">
+              <span class="nav-icon">📁</span> Files
+            </a>
+          </li>
+        </ul>
+      </nav>
+
+      <div class="sidebar-footer">
+        <span class="connection-dot disconnected"></span>
+        <span id="connection-label">Not Connected</span>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+      {% block content %}{% endblock %}
+
+      <footer class="page-footer">
+        PAIKS — Google Drive AI Assistant
+      </footer>
+    </main>
+
+    <script src="{% static 'assistant/js/app.js' %}"></script>
+    {% block extra_js %}{% endblock %}
+  </body>
+</html>

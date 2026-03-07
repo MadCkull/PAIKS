@@ -1,0 +1,33 @@
+{% extends "assistant/base.html" %}
+{% block title %}Files{% endblock %}
+{% block nav_files %}active{% endblock %}
+
+{% block content %}
+<header class="page-header">
+    <div>
+        <h1>File Browser</h1>
+        <p class="subtitle">Browse all your Google Drive files. Click any file to open it in Drive.</p>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;">
+        <button id="btn-connect" class="btn btn-primary btn-sm" onclick="connectDrive()">🔗 Connect Drive</button>
+        <button id="btn-disconnect" class="btn btn-danger btn-sm hidden" onclick="disconnectDrive()">✕
+            Disconnect</button>
+    </div>
+</header>
+
+<!-- File Search -->
+<section class="search-panel">
+    <div class="search-row">
+        <input id="file-search-input" class="search-input" placeholder="Filter files by name…" autocomplete="off" />
+    </div>
+</section>
+
+<!-- File Grid -->
+<section id="files-container" class="file-grid">
+    <!-- Loaded via JS -->
+    <div class="empty-state" style="grid-column:1/-1;">
+        <div class="empty-icon">📁</div>
+        <p>Loading files…</p>
+    </div>
+</section>
+{% endblock %}
