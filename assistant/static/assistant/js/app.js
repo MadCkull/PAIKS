@@ -360,6 +360,61 @@ function getFileClass(mime) {
 }
 
 // ---------------------------------------------------------------------------
+// Clerk Auth Guard
+// ---------------------------------------------------------------------------
+async function initClerkAuth() {
+  const guard = document.getElementById("auth-guard");
+
+  // Check if Clerk config is set
+  if (typeof CLERK_FRONTEND_API === "undefined" || CLERK_FRONTEND_API === "YOUR_FRONTEND_API_URL") {
+    // Clerk not configured — skip auth, remove guard
+    if (guard) guard.remove();
+    return true;
+  }
+
+  // Wait for Clerk global to be available
+  await new Promise((resolve) => {
+    if (window.Clerk) return resolve();
+    const interval = setInterval(() => {
+      if (window.Clerk) { clearInterval(interval); resolve(); }
+    }, 100);
+    // Timeout after 10 seconds
+    setTimeout(() => { clearInterval(interval); resolve(); }, 10000);
+  });
+
+  if (!window.Clerk) {
+    console.warn("Clerk SDK failed to load");
+    if (guard) guard.remove();
+    return true;
+  }
+
+  await Clerk.load();
+
+  if (!Clerk.isSignedIn) {
+    // Redirect to login page
+    window.location.href = "/login/";
+    return false;
+  }
+
+  // Mount UserButton in sidebar
+  const userBtnDiv = document.getElementById("clerk-user-button");
+  if (userBtnDiv) {
+    Clerk.mountUserButton(userBtnDiv, {
+      afterSignOutUrl: "/login/",
+    });
+  }
+
+  // Remove auth guard overlay
+  if (guard) {
+    guard.style.transition = "opacity .3s ease";
+    guard.style.opacity = "0";
+    setTimeout(() => guard.remove(), 300);
+  }
+
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // Mobile sidebar toggle
 // ---------------------------------------------------------------------------
 function initMobileToggle() {
@@ -374,6 +429,12 @@ function initMobileToggle() {
 // ---------------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", async () => {
   initMobileToggle();
+
+  // Clerk auth guard — blocks until verified
+  const authed = await initClerkAuth();
+  if (!authed) return; // Redirecting to login
+
+  // Now init the rest of the app
   await updateConnectionUI();
   initSearch();
 

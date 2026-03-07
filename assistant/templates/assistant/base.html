@@ -1,67 +1,105 @@
 {% load static %}
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>{% block title %}PAIKS{% endblock %} · Google Drive AI Assistant</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Connect your Google Drive and run AI-powered search over your documents." />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="{% static 'assistant/css/styles.css' %}" />
-    {% block extra_head %}{% endblock %}
-  </head>
-  <body>
-    <div class="app-bg"></div>
 
-    <!-- Mobile toggle -->
-    <button class="mobile-toggle" aria-label="Toggle sidebar">☰</button>
+<head>
+  <meta charset="UTF-8" />
+  <title>{% block title %}PAIKS{% endblock %} · Google Drive AI Assistant</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Connect your Google Drive and run AI-powered search over your documents." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="{% static 'assistant/css/styles.css' %}" />
+  {% block extra_head %}{% endblock %}
+</head>
 
-    <!-- Sidebar -->
-    <aside class="sidebar">
-      <div class="sidebar-logo">
-        <div class="logo-icon">⚡</div>
-        <span>PAIKS</span>
-      </div>
+<body>
+  <div class="app-bg"></div>
 
-      <nav>
-        <p class="nav-section-title">Navigation</p>
-        <ul class="nav-list">
-          <li>
-            <a class="nav-link {% block nav_home %}{% endblock %}" href="{% url 'home' %}">
-              <span class="nav-icon">🏠</span> Home
-            </a>
-          </li>
-          <li>
-            <a class="nav-link {% block nav_dashboard %}{% endblock %}" href="{% url 'dashboard' %}">
-              <span class="nav-icon">📊</span> Dashboard
-            </a>
-          </li>
-          <li>
-            <a class="nav-link {% block nav_files %}{% endblock %}" href="{% url 'drive_files' %}">
-              <span class="nav-icon">📁</span> Files
-            </a>
-          </li>
-        </ul>
-      </nav>
+  <!-- Mobile toggle -->
+  <button class="mobile-toggle" aria-label="Toggle sidebar">☰</button>
 
-      <div class="sidebar-footer">
-        <span class="connection-dot disconnected"></span>
-        <span id="connection-label">Not Connected</span>
-      </div>
-    </aside>
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">⚡</div>
+      <span>PAIKS</span>
+    </div>
 
-    <!-- Main Content -->
-    <main class="main">
-      {% block content %}{% endblock %}
+    <nav>
+      <p class="nav-section-title">Navigation</p>
+      <ul class="nav-list">
+        <li>
+          <a class="nav-link {% block nav_home %}{% endblock %}" href="{% url 'home' %}">
+            <span class="nav-icon">🏠</span> Home
+          </a>
+        </li>
+        <li>
+          <a class="nav-link {% block nav_dashboard %}{% endblock %}" href="{% url 'dashboard' %}">
+            <span class="nav-icon">📊</span> Dashboard
+          </a>
+        </li>
+        <li>
+          <a class="nav-link {% block nav_files %}{% endblock %}" href="{% url 'drive_files' %}">
+            <span class="nav-icon">📁</span> Files
+          </a>
+        </li>
+      </ul>
+    </nav>
 
-      <footer class="page-footer">
-        PAIKS — Google Drive AI Assistant
-      </footer>
-    </main>
+    <!-- Drive connection status -->
+    <div class="sidebar-footer" style="border-top:none;padding-bottom:4px;">
+      <span class="connection-dot disconnected"></span>
+      <span id="connection-label">Not Connected</span>
+    </div>
 
-    <script src="{% static 'assistant/js/app.js' %}"></script>
-    {% block extra_js %}{% endblock %}
-  </body>
+    <!-- Clerk User section -->
+    <div class="sidebar-footer" id="clerk-user-section">
+      <div id="clerk-user-button" style="display:flex;align-items:center;gap:8px;"></div>
+    </div>
+  </aside>
+
+  <!-- Auth guard overlay (hidden by default, shown while checking auth) -->
+  <div id="auth-guard"
+    style="position:fixed;inset:0;z-index:9999;background:var(--bg-deep);display:flex;align-items:center;justify-content:center;">
+    <div class="spinner spinner-lg"></div>
+  </div>
+
+  <!-- Main Content -->
+  <main class="main">
+    {% block content %}{% endblock %}
+
+    <footer class="page-footer">
+      PAIKS — Google Drive AI Assistant
+    </footer>
+  </main>
+
+  <!-- Clerk Config + SDK -->
+  <script src="{% static 'assistant/js/clerk_config.js' %}"></script>
+  <script>
+    // Load Clerk SDK dynamically
+    (function () {
+      if (!CLERK_FRONTEND_API || CLERK_FRONTEND_API === "YOUR_FRONTEND_API_URL") {
+        // Clerk not configured — remove auth guard and let app work without auth
+        const guard = document.getElementById('auth-guard');
+        if (guard) guard.remove();
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.async = true;
+      script.crossOrigin = 'anonymous';
+      script.setAttribute('data-clerk-publishable-key', CLERK_PUBLISHABLE_KEY);
+      script.src = `https://${CLERK_FRONTEND_API}/npm/@clerk/clerk-js@5/dist/clerk.browser.js`;
+      script.type = 'text/javascript';
+      document.head.appendChild(script);
+    })();
+  </script>
+
+  <!-- App JS (main logic) -->
+  <script src="{% static 'assistant/js/app.js' %}"></script>
+  {% block extra_js %}{% endblock %}
+</body>
+
 </html>
