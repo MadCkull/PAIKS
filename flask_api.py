@@ -27,6 +27,19 @@ SCOPES = [
 
 OAUTH_REDIRECT_URI = "http://localhost/PAIKS/oauth2callback"
 
+# Only these MIME types will be synced, browsed, and searched.
+ALLOWED_MIME_TYPES = [
+    "text/plain",                                                                 # .txt
+    "text/csv",                                                                   # .csv
+    "application/vnd.google-apps.document",                                      # Google Docs
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",   # .docx
+    "application/msword",                                                         # .doc (legacy)
+]
+
+# Pre-built Drive API mimeType OR clause, e.g.:
+#   (mimeType = 'text/plain' or mimeType = '...' or ...)
+_MIME_FILTER = "(" + " or ".join(f"mimeType = '{m}'" for m in ALLOWED_MIME_TYPES) + ")"
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -264,8 +277,8 @@ def drive_files():
         folder_cfg = _load_folder_config()
         service = _drive_service(creds)
 
-        # Build query — always scope to the chosen folder if one is set
-        conditions = ["trashed = false"]
+        # Build query — scope to chosen folder + allowed file types only
+        conditions = ["trashed = false", _MIME_FILTER]
         if folder_cfg and folder_cfg.get("folder_id"):
             conditions.append(f"'{folder_cfg['folder_id']}' in parents")
         if name_query:
@@ -303,10 +316,10 @@ def drive_sync():
     all_files = []
     page_token = None
 
-    # Scope the sync to the chosen folder (if any)
-    base_q = "trashed = false"
+    # Scope the sync to the chosen folder + allowed file types only
+    base_q = f"trashed = false and {_MIME_FILTER}"
     if folder_cfg and folder_cfg.get("folder_id"):
-        base_q = f"'{folder_cfg['folder_id']}' in parents and trashed = false"
+        base_q = f"'{folder_cfg['folder_id']}' in parents and trashed = false and {_MIME_FILTER}"
 
     while True:
         params = {
@@ -391,7 +404,7 @@ def search_documents():
     folder_cfg = _load_folder_config()
     service = _drive_service(creds)
     escaped = query.replace("'", "\\'")
-    conditions = [f"name contains '{escaped}'", "trashed = false"]
+    conditions = [f"name contains '{escaped}'", "trashed = false", _MIME_FILTER]
     if folder_cfg and folder_cfg.get("folder_id"):
         conditions.append(f"'{folder_cfg['folder_id']}' in parents")
     results = (

@@ -21,8 +21,9 @@
     <div>
       <p class="card-label">📂 Sync Source</p>
       <p class="card-helper mt-sm">
-        Only files inside your chosen folder will be fetched and searched.
-        If no folder is set, <em>your entire Drive</em> is used.
+        Only <strong>TXT, CSV, Google Docs,</strong> and <strong>Word (.doc/.docx)</strong> files
+        will be fetched and searched. If no folder is set, these file types are pulled
+        from <em>your entire Drive</em>.
       </p>
       <div class="chips mt-sm">
         <span id="folder-scope-badge" class="badge badge-dim">
@@ -82,6 +83,7 @@
     </span>
     <span class="badge badge-accent">API: Flask /search</span>
     <span class="badge badge-dim">Frontend: Django</span>
+    <span class="badge badge-green">File filter: TXT · CSV · Docs · DOCX</span>
   </div>
 </section>
 {% endblock %}
