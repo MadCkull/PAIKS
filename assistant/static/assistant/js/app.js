@@ -360,6 +360,116 @@ function getFileClass(mime) {
 }
 
 // ---------------------------------------------------------------------------
+// Feature card handlers (home page)
+// ---------------------------------------------------------------------------
+async function handleFeatureSync() {
+  const card = document.getElementById("card-sync");
+  const icon = document.getElementById("sync-icon");
+  if (card) card.classList.add("feature-card-loading");
+  if (icon) icon.textContent = "⏳";
+
+  try {
+    const res = await fetch(`${API_BASE}/drive/sync`, { method: "POST" });
+    const data = await res.json();
+    if (data.error) {
+      showToast(data.error, "error");
+    } else {
+      showToast(`Synced ${data.total} files! Opening dashboard…`, "success");
+      setTimeout(() => { window.location.href = "/dashboard/"; }, 1200);
+    }
+  } catch (err) {
+    showToast("Sync failed: " + err.message, "error");
+  } finally {
+    if (card) card.classList.remove("feature-card-loading");
+    if (icon) icon.textContent = "🔄";
+  }
+}
+
+function handleFeatureSearch() {
+  const input = document.getElementById("search-input");
+  if (!input) return;
+  input.scrollIntoView({ behavior: "smooth", block: "center" });
+  setTimeout(() => input.focus(), 400);
+}
+
+// ---------------------------------------------------------------------------
+// RAG Search
+// ---------------------------------------------------------------------------
+async function ragSearch() {
+  const input = document.getElementById("rag-input");
+  const results = document.getElementById("rag-results");
+  const btn = document.getElementById("rag-btn");
+  const btnLabel = document.getElementById("rag-btn-label");
+  if (!input || !results) return;
+
+  const query = input.value.trim();
+  if (!query) {
+    results.innerHTML = '<p class="text-muted" style="padding:8px 0;">Please enter a question.</p>';
+    return;
+  }
+
+  // Loading state
+  if (btn) btn.disabled = true;
+  if (btnLabel) btnLabel.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;"></span>';
+  results.innerHTML = '<div class="flex-center" style="padding:20px 0;"><div class="spinner"></div></div>';
+
+  try {
+    const res = await fetch(`${API_BASE}/rag/search`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query }),
+    });
+    const data = await res.json();
+
+    if (data.error) {
+      results.innerHTML = `<p class="text-muted" style="padding:8px 0;">${data.error}</p>`;
+      return;
+    }
+
+    if (!data.results || data.results.length === 0) {
+      results.innerHTML = `
+        <div class="rag-empty">
+          <span style="font-size:1.6rem;">🤔</span>
+          <p>No matching documents found for <strong>"${escapeHtml(query)}"</strong>.</p>
+          <p class="text-muted" style="font-size:.8rem;">Try syncing your Drive first, or rephrase your question.</p>
+        </div>`;
+      return;
+    }
+
+    const sourceLabel = data.source === "live" ? "Live Drive" : "Cached";
+    const folderLabel = data.folder?.folder_name
+      ? `📁 ${escapeHtml(data.folder.folder_name)}`
+      : "Entire Drive";
+
+    results.innerHTML = `
+      <div class="rag-meta">
+        <span>${data.total} result${data.total !== 1 ? "s" : ""} for <strong>"${escapeHtml(query)}"</strong></span>
+        <span>${sourceLabel} · ${folderLabel}</span>
+      </div>
+      ${data.results.map((r, i) => `
+        <a href="${r.webViewLink || '#'}" target="_blank" rel="noopener"
+          class="rag-result-item" style="animation-delay:${i * 0.05}s">
+          <div class="rag-result-icon">${getFileEmoji(r.mimeType)}</div>
+          <div class="rag-result-body">
+            <div class="rag-result-name">${escapeHtml(r.name)}</div>
+            <div class="rag-result-hint">${escapeHtml(r.relevance_hint || "")}</div>
+            <div class="rag-result-meta">
+              ${formatMimeType(r.mimeType)}
+              ${r.modifiedTime ? " · " + formatDate(r.modifiedTime) : ""}
+              ${r.size ? " · " + formatSize(r.size) : ""}
+            </div>
+          </div>
+          <span class="rag-result-arrow">↗</span>
+        </a>`).join("")}`;
+  } catch (err) {
+    results.innerHTML = `<p class="text-muted" style="padding:8px 0;">RAG search failed: ${err.message}</p>`;
+  } finally {
+    if (btn) btn.disabled = false;
+    if (btnLabel) btnLabel.textContent = "Ask";
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Folder Picker
 // ---------------------------------------------------------------------------
 
@@ -599,6 +709,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     loadFolderBadge();
   }
   if (document.getElementById("files-container")) loadFiles();
+
+  // RAG search — Enter key support
+  const ragInput = document.getElementById("rag-input");
+  if (ragInput) {
+    ragInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") ragSearch();
+    });
+  }
 
   // File search on files page
   const fileSearchInput = document.getElementById("file-search-input");

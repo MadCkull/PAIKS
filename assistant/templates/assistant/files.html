@@ -6,16 +6,35 @@
 <header class="page-header">
     <div>
         <h1>File Browser</h1>
-        <p class="subtitle">Browse all your Google Drive files. Click any file to open it in Drive.</p>
+        <p class="subtitle">Browse and search your synced Google Drive documents. Click any file to open it in Drive.</p>
     </div>
     <div style="display:flex;gap:10px;align-items:center;">
         <button id="btn-connect" class="btn btn-primary btn-sm" onclick="connectDrive()">🔗 Connect Drive</button>
-        <button id="btn-disconnect" class="btn btn-danger btn-sm hidden" onclick="disconnectDrive()">✕
-            Disconnect</button>
+        <button id="btn-disconnect" class="btn btn-danger btn-sm hidden" onclick="disconnectDrive()">✕ Disconnect</button>
     </div>
 </header>
 
-<!-- File Search -->
+<!-- Smart RAG Search panel -->
+<section class="rag-panel">
+    <div class="rag-panel-header">
+        <div class="feature-icon" style="background:rgba(168,85,247,.12);color:#a855f7;width:36px;height:36px;font-size:1.1rem;">🧠</div>
+        <div>
+            <h2 class="rag-title">Smart RAG Search</h2>
+            <p class="rag-subtitle">Ask a question in plain English — the assistant will find the most relevant documents from your synced files.</p>
+        </div>
+    </div>
+    <div class="rag-input-row">
+        <input id="rag-input" class="search-input rag-input"
+            placeholder="e.g. What were the Q3 revenue figures? Summarise the project plan…"
+            autocomplete="off" />
+        <button id="rag-btn" class="btn rag-btn" onclick="ragSearch()">
+            <span id="rag-btn-label">Ask</span>
+        </button>
+    </div>
+    <div id="rag-results" class="rag-results"></div>
+</section>
+
+<!-- Plain file name filter -->
 <section class="search-panel">
     <div class="search-row">
         <input id="file-search-input" class="search-input" placeholder="Filter files by name…" autocomplete="off" />
@@ -24,7 +43,6 @@
 
 <!-- File Grid -->
 <section id="files-container" class="file-grid">
-    <!-- Loaded via JS -->
     <div class="empty-state" style="grid-column:1/-1;">
         <div class="empty-icon">📁</div>
         <p>Loading files…</p>

@@ -34,24 +34,36 @@
 
 <!-- Feature Cards -->
 <section class="features-grid mt-lg">
-  <article class="card feature-card">
-    <div class="feature-icon" style="background:var(--green-bg);color:var(--green);">🔄</div>
+
+  <!-- Smart Sync → triggers sync, then goes to dashboard -->
+  <article class="card feature-card feature-card-clickable" id="card-sync"
+    onclick="handleFeatureSync()" role="button" tabindex="0"
+    aria-label="Sync your Google Drive now">
+    <div class="feature-icon" style="background:var(--green-bg);color:var(--green);" id="sync-icon">🔄</div>
     <h3>Smart Sync</h3>
-    <p>Automatically sync and index your Google Drive files. Stay up to date with one-click re-sync from the dashboard.
-    </p>
+    <p>Automatically sync and index your Google Drive files. Stay up to date with one-click re-sync from the dashboard.</p>
+    <span class="feature-cta" style="color:var(--green);">Sync now →</span>
   </article>
 
-  <article class="card feature-card">
+  <!-- AI Search → scrolls to search bar and focuses it -->
+  <article class="card feature-card feature-card-clickable" id="card-search"
+    onclick="handleFeatureSearch()" role="button" tabindex="0"
+    aria-label="Focus the AI search bar">
     <div class="feature-icon" style="background:var(--accent-bg);color:var(--accent-light);">🔍</div>
     <h3>AI-Powered Search</h3>
-    <p>Search across all your documents, spreadsheets, and presentations with intelligent matching — not just file
-      names.</p>
+    <p>Search across all your documents with intelligent matching — not just file names. Try Smart RAG search too.</p>
+    <span class="feature-cta" style="color:var(--accent-light);">Start searching →</span>
   </article>
 
-  <article class="card feature-card">
+  <!-- File Browser → navigates to /files/ -->
+  <article class="card feature-card feature-card-clickable"
+    onclick="window.location.href='{% url 'drive_files' %}'" role="button" tabindex="0"
+    aria-label="Open the file browser">
     <div class="feature-icon" style="background:rgba(168,85,247,.12);color:#a855f7;">📁</div>
     <h3>File Browser</h3>
     <p>Browse and preview all your synced files with a sleek, modern interface. Jump to any file in one click.</p>
+    <span class="feature-cta" style="color:#a855f7;">Browse files →</span>
   </article>
+
 </section>
 {% endblock %}

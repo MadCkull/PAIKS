@@ -420,6 +420,95 @@ def search_documents():
     return jsonify({"query": query, "results": results.get("files", []), "source": "live"})
 
 
+# ---------------------------------------------------------------------------
+# RAG Search  (keyword-based matching over cached files — ready for embeddings)
+# ---------------------------------------------------------------------------
+
+@app.post("/rag/search")
+def rag_search():
+    """
+    Smart document search scoped to the user's chosen folder and allowed MIME types.
+    Scores each cached file by how many query words appear in the file name,
+    then returns the top matches with a relevance context snippet.
+    Later this can be replaced with real vector/embedding search.
+    """
+    payload = request.get_json(silent=True) or {}
+    query = payload.get("query", "").strip()
+    if not query:
+        return jsonify({"error": "query is required"}), 400
+
+    # Try live Drive search first; fall back to cache if not authenticated.
+    creds = _get_creds()
+    folder_cfg = _load_folder_config()
+
+    if creds:
+        service = _drive_service(creds)
+        escaped = query.replace("'", "\\'")
+        conditions = [
+            f"name contains '{escaped}'",
+            "trashed = false",
+            _MIME_FILTER,
+        ]
+        if folder_cfg and folder_cfg.get("folder_id"):
+            conditions.append(f"'{folder_cfg['folder_id']}' in parents")
+        try:
+            results = (
+                service.files()
+                .list(
+                    q=" and ".join(conditions),
+                    pageSize=10,
+                    fields="files(id, name, mimeType, modifiedTime, webViewLink, size)",
+                    orderBy="modifiedTime desc",
+                )
+                .execute()
+            )
+            files = results.get("files", [])
+        except Exception as e:
+            app.logger.error("rag live search error: %s", str(e))
+            files = []
+    else:
+        files = []
+
+    # Fall back to cached files with keyword scoring
+    if not files:
+        cache = _load_cache()
+        words = [w.lower() for w in query.split() if w]
+        scored = []
+        for f in cache.get("files", []):
+            name_lower = f.get("name", "").lower()
+            score = sum(1 for w in words if w in name_lower)
+            if score > 0:
+                scored.append((score, f))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        files = [f for _, f in scored[:10]]
+
+    hits = []
+    words = [w.lower() for w in query.split() if w]
+    for f in files:
+        name = f.get("name", "")
+        matched_words = [w for w in words if w in name.lower()]
+        hits.append({
+            "id": f.get("id"),
+            "name": name,
+            "mimeType": f.get("mimeType", ""),
+            "modifiedTime": f.get("modifiedTime", ""),
+            "webViewLink": f.get("webViewLink", ""),
+            "size": f.get("size"),
+            "relevance_hint": (
+                f"Matched on: {', '.join(matched_words)}" if matched_words
+                else "Matched via Drive full-text index"
+            ),
+        })
+
+    return jsonify({
+        "query": query,
+        "results": hits,
+        "total": len(hits),
+        "source": "live" if creds else "cache",
+        "folder": folder_cfg,
+    })
+
+
 if __name__ == "__main__":
     os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"  # Allow HTTP for local dev
     app.run(host="127.0.0.1", port=5001, debug=True)
