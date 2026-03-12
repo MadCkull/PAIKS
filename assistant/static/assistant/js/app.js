@@ -360,6 +360,161 @@ function getFileClass(mime) {
 }
 
 // ---------------------------------------------------------------------------
+// Folder Picker
+// ---------------------------------------------------------------------------
+
+function openFolderPicker() {
+  // Remove any stale modal
+  const existing = document.getElementById("folder-picker-modal");
+  if (existing) existing.remove();
+
+  const modal = document.createElement("div");
+  modal.id = "folder-picker-modal";
+  modal.innerHTML = `
+    <div class="modal-backdrop" id="folder-modal-backdrop"></div>
+    <div class="modal-box">
+      <div class="modal-header">
+        <div>
+          <h2 class="modal-title">Choose a Folder to Sync</h2>
+          <p class="modal-subtitle">Only files inside the selected folder will be fetched and searched.</p>
+        </div>
+        <button class="modal-close" id="folder-modal-close">✕</button>
+      </div>
+      <div class="modal-search-row">
+        <input id="folder-filter-input" class="search-input" placeholder="Filter folders…" autocomplete="off" />
+      </div>
+      <div id="folder-list" class="folder-list">
+        <div class="flex-center mt-md"><div class="spinner"></div></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline btn-sm" id="btn-use-all-drive">Use entire Drive (no folder filter)</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  const closeModal = () => modal.remove();
+  document.getElementById("folder-modal-close").addEventListener("click", closeModal);
+  document.getElementById("folder-modal-backdrop").addEventListener("click", closeModal);
+
+  let allFolders = [];
+
+  const renderFolders = (folders) => {
+    const list = document.getElementById("folder-list");
+    if (!list) return;
+    if (folders.length === 0) {
+      list.innerHTML = '<p class="text-muted" style="padding:12px 0;">No folders found.</p>';
+      return;
+    }
+    list.innerHTML = folders.map(f => `
+      <button class="folder-item" data-id="${escapeHtml(f.id)}" data-name="${escapeHtml(f.name)}">
+        <span class="folder-item-icon">📁</span>
+        <span class="folder-item-name">${escapeHtml(f.name)}</span>
+        <span class="folder-item-arrow">→</span>
+      </button>`).join("");
+
+    list.querySelectorAll(".folder-item").forEach(btn => {
+      btn.addEventListener("click", () => {
+        selectFolder(btn.dataset.id, btn.dataset.name);
+        closeModal();
+      });
+    });
+  };
+
+  // Load folders from API
+  fetch(`${API_BASE}/drive/folders`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) {
+        document.getElementById("folder-list").innerHTML =
+          `<p class="text-muted" style="padding:12px 0;">${data.error}</p>`;
+        return;
+      }
+      allFolders = data.folders || [];
+      renderFolders(allFolders);
+
+      // Pre-select current folder in the list
+      if (data.current_folder?.folder_id) {
+        setTimeout(() => {
+          const active = document.querySelector(`.folder-item[data-id="${data.current_folder.folder_id}"]`);
+          if (active) {
+            active.classList.add("folder-item-active");
+            active.scrollIntoView({ block: "nearest" });
+          }
+        }, 50);
+      }
+    })
+    .catch(err => {
+      document.getElementById("folder-list").innerHTML =
+        `<p class="text-muted" style="padding:12px 0;">Failed to load folders: ${err.message}</p>`;
+    });
+
+  // Live filter
+  document.getElementById("folder-filter-input").addEventListener("input", (e) => {
+    const q = e.target.value.trim().toLowerCase();
+    renderFolders(q ? allFolders.filter(f => f.name.toLowerCase().includes(q)) : allFolders);
+  });
+
+  // Clear folder → use entire Drive
+  document.getElementById("btn-use-all-drive").addEventListener("click", () => {
+    clearFolderFilter();
+    closeModal();
+  });
+}
+
+async function selectFolder(folderId, folderName) {
+  try {
+    const res = await fetch(`${API_BASE}/drive/set-folder`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ folder_id: folderId, folder_name: folderName }),
+    });
+    const data = await res.json();
+    if (data.error) { showToast(data.error, "error"); return; }
+    showToast(`Sync scope set to: ${folderName}`, "success");
+    updateFolderBadge({ folder_id: folderId, folder_name: folderName });
+  } catch (err) {
+    showToast("Failed to set folder: " + err.message, "error");
+  }
+}
+
+async function clearFolderFilter() {
+  try {
+    await fetch(`${API_BASE}/drive/set-folder`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    showToast("Sync scope reset to entire Drive", "info");
+    updateFolderBadge(null);
+  } catch (err) {
+    showToast("Failed to reset folder: " + err.message, "error");
+  }
+}
+
+function updateFolderBadge(folderCfg) {
+  const badge = document.getElementById("folder-scope-badge");
+  const name = document.getElementById("folder-scope-name");
+  if (!badge) return;
+  if (folderCfg?.folder_name) {
+    badge.className = "badge badge-green";
+    if (name) name.textContent = `📁 ${folderCfg.folder_name}`;
+  } else {
+    badge.className = "badge badge-dim";
+    if (name) name.textContent = "Entire Drive";
+  }
+}
+
+async function loadFolderBadge() {
+  try {
+    const res = await fetch(`${API_BASE}/drive/folder-config`);
+    const data = await res.json();
+    updateFolderBadge(data?.folder_id ? data : null);
+  } catch {
+    updateFolderBadge(null);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Clerk Auth Guard
 // ---------------------------------------------------------------------------
 async function initClerkAuth() {
@@ -439,7 +594,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   initSearch();
 
   // Page-specific init
-  if (document.getElementById("stat-total")) loadDashboardStats();
+  if (document.getElementById("stat-total")) {
+    loadDashboardStats();
+    loadFolderBadge();
+  }
   if (document.getElementById("files-container")) loadFiles();
 
   // File search on files page

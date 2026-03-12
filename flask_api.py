@@ -18,6 +18,7 @@ BASE_DIR = pathlib.Path(__file__).resolve().parent
 TOKEN_PATH = BASE_DIR / "token.json"
 CREDENTIALS_PATH = BASE_DIR / "credentials.json"
 SYNC_CACHE_PATH = BASE_DIR / "drive_cache.json"
+FOLDER_CONFIG_PATH = BASE_DIR / "folder_config.json"
 
 SCOPES = [
     "https://www.googleapis.com/auth/drive.readonly",
@@ -65,6 +66,23 @@ def _load_cache():
 
 def _save_cache(data):
     SYNC_CACHE_PATH.write_text(json.dumps(data, default=str), encoding="utf-8")
+
+
+def _load_folder_config():
+    """Return {"folder_id": ..., "folder_name": ...} or None if not set."""
+    if FOLDER_CONFIG_PATH.exists():
+        try:
+            return json.loads(FOLDER_CONFIG_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return None
+
+
+def _save_folder_config(folder_id, folder_name):
+    FOLDER_CONFIG_PATH.write_text(
+        json.dumps({"folder_id": folder_id, "folder_name": folder_name}),
+        encoding="utf-8",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +187,69 @@ def auth_disconnect():
 # Drive
 # ---------------------------------------------------------------------------
 
+@app.get("/drive/folders")
+def drive_list_folders():
+    """Return all folders the user owns/can see so they can pick one."""
+    creds = _get_creds()
+    if not creds:
+        return jsonify({"error": "Not authenticated"}), 401
+
+    try:
+        service = _drive_service(creds)
+        folders = []
+        page_token = None
+        while True:
+            params = {
+                "pageSize": 100,
+                "fields": "nextPageToken, files(id, name, modifiedTime)",
+                "q": "mimeType = 'application/vnd.google-apps.folder' and trashed = false",
+                "orderBy": "name",
+            }
+            if page_token:
+                params["pageToken"] = page_token
+            results = service.files().list(**params).execute()
+            folders.extend(results.get("files", []))
+            page_token = results.get("nextPageToken")
+            if not page_token:
+                break
+
+        current = _load_folder_config()
+        return jsonify({
+            "folders": folders,
+            "current_folder": current,
+        })
+    except Exception as e:
+        app.logger.error("drive_list_folders error: %s", str(e))
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/drive/set-folder")
+def drive_set_folder():
+    """Save the user's chosen folder. Pass {} to clear (sync all Drive)."""
+    payload = request.get_json(silent=True) or {}
+    folder_id = payload.get("folder_id", "").strip()
+    folder_name = payload.get("folder_name", "").strip()
+
+    if folder_id:
+        _save_folder_config(folder_id, folder_name)
+        # Wipe stale cache so next sync reflects the new scope
+        if SYNC_CACHE_PATH.exists():
+            SYNC_CACHE_PATH.unlink()
+        return jsonify({"status": "saved", "folder_id": folder_id, "folder_name": folder_name})
+    else:
+        # Clear folder config → sync entire Drive
+        if FOLDER_CONFIG_PATH.exists():
+            FOLDER_CONFIG_PATH.unlink()
+        if SYNC_CACHE_PATH.exists():
+            SYNC_CACHE_PATH.unlink()
+        return jsonify({"status": "cleared"})
+
+
+@app.get("/drive/folder-config")
+def drive_folder_config():
+    return jsonify(_load_folder_config() or {})
+
+
 @app.get("/drive/files")
 def drive_files():
     creds = _get_creds()
@@ -178,25 +259,33 @@ def drive_files():
     try:
         page_token = request.args.get("pageToken")
         page_size = int(request.args.get("pageSize", 20))
-        query = request.args.get("q", "")
+        name_query = request.args.get("q", "")
 
+        folder_cfg = _load_folder_config()
         service = _drive_service(creds)
+
+        # Build query — always scope to the chosen folder if one is set
+        conditions = ["trashed = false"]
+        if folder_cfg and folder_cfg.get("folder_id"):
+            conditions.append(f"'{folder_cfg['folder_id']}' in parents")
+        if name_query:
+            escaped = name_query.replace("'", "\\'")
+            conditions.append(f"name contains '{escaped}'")
+
         params = {
             "pageSize": page_size,
             "fields": "nextPageToken, files(id, name, mimeType, modifiedTime, size, iconLink, webViewLink, thumbnailLink)",
             "orderBy": "modifiedTime desc",
+            "q": " and ".join(conditions),
         }
         if page_token:
             params["pageToken"] = page_token
-        if query:
-            params["q"] = f"name contains '{query}' and trashed = false"
-        else:
-            params["q"] = "trashed = false"
 
         results = service.files().list(**params).execute()
         return jsonify({
             "files": results.get("files", []),
             "nextPageToken": results.get("nextPageToken"),
+            "folder": folder_cfg,
         })
     except Exception as e:
         app.logger.error("drive_files error: %s", str(e))
@@ -209,15 +298,21 @@ def drive_sync():
     if not creds:
         return jsonify({"error": "Not authenticated"}), 401
 
+    folder_cfg = _load_folder_config()
     service = _drive_service(creds)
     all_files = []
     page_token = None
+
+    # Scope the sync to the chosen folder (if any)
+    base_q = "trashed = false"
+    if folder_cfg and folder_cfg.get("folder_id"):
+        base_q = f"'{folder_cfg['folder_id']}' in parents and trashed = false"
 
     while True:
         params = {
             "pageSize": 100,
             "fields": "nextPageToken, files(id, name, mimeType, modifiedTime, size, iconLink, webViewLink)",
-            "q": "trashed = false",
+            "q": base_q,
             "orderBy": "modifiedTime desc",
         }
         if page_token:
@@ -233,15 +328,22 @@ def drive_sync():
         "files": all_files,
         "synced_at": datetime.now(timezone.utc).isoformat(),
         "total": len(all_files),
+        "folder": folder_cfg,
     }
     _save_cache(cache_data)
-    return jsonify({"status": "synced", "total": len(all_files), "synced_at": cache_data["synced_at"]})
+    return jsonify({
+        "status": "synced",
+        "total": len(all_files),
+        "synced_at": cache_data["synced_at"],
+        "folder": folder_cfg,
+    })
 
 
 @app.get("/drive/stats")
 def drive_stats():
     creds = _get_creds()
     cache = _load_cache()
+    folder_cfg = _load_folder_config()
     file_types = {}
     for f in cache.get("files", []):
         mime = f.get("mimeType", "unknown")
@@ -253,6 +355,7 @@ def drive_stats():
         "documents_total": len(cache.get("files", [])),
         "synced_at": cache.get("synced_at", "Not synced yet"),
         "file_types": file_types,
+        "folder": folder_cfg,
     })
 
 
@@ -284,13 +387,17 @@ def search_documents():
         ]
         return jsonify({"query": query, "results": results[:20], "source": "cache"})
 
-    # Live search from Drive API
+    # Live search from Drive API — scoped to chosen folder if set
+    folder_cfg = _load_folder_config()
     service = _drive_service(creds)
     escaped = query.replace("'", "\\'")
+    conditions = [f"name contains '{escaped}'", "trashed = false"]
+    if folder_cfg and folder_cfg.get("folder_id"):
+        conditions.append(f"'{folder_cfg['folder_id']}' in parents")
     results = (
         service.files()
         .list(
-            q=f"name contains '{escaped}' and trashed = false",
+            q=" and ".join(conditions),
             pageSize=20,
             fields="files(id, name, mimeType, modifiedTime, webViewLink, iconLink, size)",
             orderBy="modifiedTime desc",
