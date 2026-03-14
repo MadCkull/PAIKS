@@ -1,7 +1,9 @@
+import io
 import json
 import os
 import pathlib
 import secrets
+import threading
 import urllib.parse
 import urllib.request
 
@@ -19,6 +21,15 @@ TOKEN_PATH = BASE_DIR / "token.json"
 CREDENTIALS_PATH = BASE_DIR / "credentials.json"
 SYNC_CACHE_PATH = BASE_DIR / "drive_cache.json"
 FOLDER_CONFIG_PATH = BASE_DIR / "folder_config.json"
+CHROMA_PATH = BASE_DIR / "chroma_db"
+LLM_CONFIG_PATH = BASE_DIR / "llm_config.json"
+
+# Default: Ollama running locally
+_DEFAULT_LLM_CONFIG = {
+    "base_url": "http://localhost:11434",
+    "model": "llama3.2",
+    "provider": "ollama",        # "ollama" | "openai_compat"
+}
 
 SCOPES = [
     "https://www.googleapis.com/auth/drive.readonly",
@@ -95,6 +106,87 @@ def _save_folder_config(folder_id, folder_name):
     FOLDER_CONFIG_PATH.write_text(
         json.dumps({"folder_id": folder_id, "folder_name": folder_name}),
         encoding="utf-8",
+    )
+
+
+def _load_llm_config() -> dict:
+    if LLM_CONFIG_PATH.exists():
+        try:
+            return json.loads(LLM_CONFIG_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return dict(_DEFAULT_LLM_CONFIG)
+
+
+def _save_llm_config(cfg: dict):
+    LLM_CONFIG_PATH.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+
+
+def _ollama_list_models(base_url: str) -> list[str]:
+    """Return model names available in a running Ollama instance."""
+    url = base_url.rstrip("/") + "/api/tags"
+    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=5) as resp:
+        data = json.loads(resp.read())
+    return [m["name"] for m in data.get("models", [])]
+
+
+def _call_local_llm(prompt: str, cfg: dict) -> str:
+    """
+    Send a prompt to the configured local LLM and return the text response.
+    Supports:
+      - Ollama native API  (provider == "ollama" or port 11434)
+      - OpenAI-compatible  (provider == "openai_compat", e.g. LM Studio)
+    """
+    base_url = cfg.get("base_url", "http://localhost:11434").rstrip("/")
+    model = cfg.get("model", "llama3.2")
+    provider = cfg.get("provider", "ollama")
+
+    payload: dict
+    endpoint: str
+
+    if provider == "ollama":
+        endpoint = f"{base_url}/api/generate"
+        payload = {"model": model, "prompt": prompt, "stream": False}
+    else:
+        # OpenAI-compatible (LM Studio, llama.cpp server, etc.)
+        endpoint = f"{base_url}/v1/chat/completions"
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.2,
+            "stream": False,
+        }
+
+    req = urllib.request.Request(
+        endpoint,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        result = json.loads(resp.read())
+
+    if provider == "ollama":
+        return result.get("response", "").strip()
+    else:
+        return result["choices"][0]["message"]["content"].strip()
+
+
+def _build_rag_prompt(query: str, chunks: list[dict]) -> str:
+    """Build a grounded RAG prompt from retrieved chunks."""
+    ctx_parts = []
+    for i, c in enumerate(chunks, 1):
+        ctx_parts.append(f"[{i}] Source: {c['name']}\n{c['text']}")
+    context = "\n\n".join(ctx_parts)
+    return (
+        "You are a helpful document assistant. "
+        "Answer the user's question using ONLY the document extracts below. "
+        "Be concise and cite source names where relevant. "
+        "If the answer is not contained in the documents, say so clearly.\n\n"
+        f"DOCUMENTS:\n{context}\n\n"
+        f"QUESTION: {query}\n\n"
+        "ANSWER:"
     )
 
 
@@ -421,38 +513,275 @@ def search_documents():
 
 
 # ---------------------------------------------------------------------------
-# RAG Search  (keyword-based matching over cached files — ready for embeddings)
+# RAG – ChromaDB with built-in ONNX embeddings (no PyTorch needed)
 # ---------------------------------------------------------------------------
+
+_chroma_client = None
+_chroma_collection = None
+_chroma_lock = threading.Lock()
+
+# Tracks progress of a running ingest so the UI can poll it.
+_ingest_progress: dict = {"running": False, "processed": 0, "total": 0, "done": False, "error": None}
+
+
+def _get_collection():
+    global _chroma_client, _chroma_collection
+    if _chroma_collection is None:
+        with _chroma_lock:
+            if _chroma_collection is None:
+                import chromadb
+                from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
+                _chroma_client = chromadb.PersistentClient(path=str(CHROMA_PATH))
+                _chroma_collection = _chroma_client.get_or_create_collection(
+                    name="paiks_docs",
+                    embedding_function=DefaultEmbeddingFunction(),
+                    metadata={"hnsw:space": "cosine"},
+                )
+    return _chroma_collection
+
+
+def _extract_text_from_drive(service, file_id, mime_type):
+    """Download a Drive file and return its plain-text content, or None on failure."""
+    try:
+        if mime_type == "application/vnd.google-apps.document":
+            raw = service.files().export(fileId=file_id, mimeType="text/plain").execute()
+            return raw.decode("utf-8", errors="ignore") if isinstance(raw, bytes) else str(raw)
+
+        if mime_type in ("text/plain", "text/csv"):
+            from googleapiclient.http import MediaIoBaseDownload
+            buf = io.BytesIO()
+            dl = MediaIoBaseDownload(buf, service.files().get_media(fileId=file_id))
+            done = False
+            while not done:
+                _, done = dl.next_chunk()
+            return buf.getvalue().decode("utf-8", errors="ignore")
+
+        if mime_type in (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/msword",
+        ):
+            from googleapiclient.http import MediaIoBaseDownload
+            import docx as docx_lib
+            buf = io.BytesIO()
+            dl = MediaIoBaseDownload(buf, service.files().get_media(fileId=file_id))
+            done = False
+            while not done:
+                _, done = dl.next_chunk()
+            buf.seek(0)
+            try:
+                doc = docx_lib.Document(buf)
+                return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+            except Exception:
+                return buf.getvalue().decode("utf-8", errors="ignore")
+
+    except Exception as exc:
+        app.logger.warning("extract_text failed for %s (%s): %s", file_id, mime_type, exc)
+    return None
+
+
+def _chunk_text(text, chunk_size=600, overlap=120):
+    """Split text into overlapping character-level chunks."""
+    text = " ".join(text.split())
+    if not text:
+        return []
+    chunks, start = [], 0
+    while start < len(text):
+        end = start + chunk_size
+        chunks.append(text[start:end])
+        if end >= len(text):
+            break
+        start = end - overlap
+    return chunks
+
+
+# ---------------------------------------------------------------------------
+# RAG endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/rag/status")
+def rag_status():
+    try:
+        col = _get_collection()
+        count = col.count()
+        return jsonify({
+            "indexed": count > 0,
+            "total_chunks": count,
+            "ingest_running": _ingest_progress["running"],
+            "ingest_progress": _ingest_progress,
+        })
+    except Exception:
+        return jsonify({"indexed": False, "total_chunks": 0, "ingest_running": False})
+
+
+@app.post("/rag/ingest")
+def rag_ingest():
+    """Download each synced file, extract text, chunk, embed, and store in ChromaDB."""
+    global _ingest_progress
+
+    if _ingest_progress.get("running"):
+        return jsonify({"error": "Ingest already running. Check /rag/status for progress."}), 409
+
+    creds = _get_creds()
+    if not creds:
+        return jsonify({"error": "Not authenticated. Connect Google Drive first."}), 401
+
+    cache = _load_cache()
+    files = cache.get("files", [])
+    if not files:
+        return jsonify({"error": "No synced files found. Run Sync first, then try again."}), 400
+
+    service = _drive_service(creds)
+    col = _get_collection()
+
+    _ingest_progress = {"running": True, "processed": 0, "total": len(files), "done": False, "error": None}
+
+    processed, skipped, errors = 0, 0, []
+    total_chunks = 0
+
+    for f in files:
+        fid = f.get("id", "")
+        fname = f.get("name", "untitled")
+        mime = f.get("mimeType", "")
+
+        text = _extract_text_from_drive(service, fid, mime)
+        if not text or not text.strip():
+            skipped += 1
+            _ingest_progress["processed"] += 1
+            continue
+
+        chunks = _chunk_text(text)
+        if not chunks:
+            skipped += 1
+            _ingest_progress["processed"] += 1
+            continue
+
+        ids = [f"{fid}__chunk__{i}" for i in range(len(chunks))]
+        metadatas = [
+            {
+                "file_id": fid,
+                "file_name": fname,
+                "mime_type": mime,
+                "web_view_link": f.get("webViewLink", ""),
+                "modified_time": f.get("modifiedTime", ""),
+                "chunk_index": i,
+            }
+            for i in range(len(chunks))
+        ]
+
+        try:
+            # Pass raw text; ChromaDB's DefaultEmbeddingFunction (ONNX) embeds automatically
+            col.upsert(ids=ids, documents=chunks, metadatas=metadatas)
+            processed += 1
+            total_chunks += len(chunks)
+        except Exception as exc:
+            errors.append({"file": fname, "error": str(exc)})
+            app.logger.error("Chroma upsert failed for %s: %s", fname, exc)
+
+        _ingest_progress["processed"] += 1
+
+    _ingest_progress.update({"running": False, "done": True})
+
+    return jsonify({
+        "status": "ingested",
+        "files_processed": processed,
+        "files_skipped": skipped,
+        "total_chunks": total_chunks,
+        "errors": errors[:10],
+    })
+
 
 @app.post("/rag/search")
 def rag_search():
-    """
-    Smart document search scoped to the user's chosen folder and allowed MIME types.
-    Scores each cached file by how many query words appear in the file name,
-    then returns the top matches with a relevance context snippet.
-    Later this can be replaced with real vector/embedding search.
-    """
+    """Semantic retrieval → local LLM generation → return answer + source chunks."""
     payload = request.get_json(silent=True) or {}
     query = payload.get("query", "").strip()
     if not query:
         return jsonify({"error": "query is required"}), 400
 
-    # Try live Drive search first; fall back to cache if not authenticated.
-    creds = _get_creds()
     folder_cfg = _load_folder_config()
+    llm_cfg = _load_llm_config()
 
+    # ── Semantic retrieval ──────────────────────────────────────────────────
+    try:
+        col = _get_collection()
+        if col.count() > 0:
+            n_retrieve = min(15, col.count())
+            raw = col.query(
+                query_texts=[query],   # ChromaDB's ONNX EF embeds the query automatically
+                n_results=n_retrieve,
+                include=["documents", "metadatas", "distances"],
+            )
+
+            # Raw chunks (top-5) passed to the LLM as context
+            llm_chunks: list[dict] = []
+            for doc, meta, dist in zip(
+                raw["documents"][0][:5],
+                raw["metadatas"][0][:5],
+                raw["distances"][0][:5],
+            ):
+                llm_chunks.append({"name": meta["file_name"], "text": doc})
+
+            # Deduplicated source list for the UI (best chunk per file)
+            seen: dict = {}
+            for doc, meta, dist in zip(
+                raw["documents"][0],
+                raw["metadatas"][0],
+                raw["distances"][0],
+            ):
+                fid = meta["file_id"]
+                score = round(1.0 - float(dist), 3)
+                if fid not in seen or score > seen[fid]["score"]:
+                    seen[fid] = {
+                        "id": fid,
+                        "name": meta["file_name"],
+                        "mimeType": meta["mime_type"],
+                        "webViewLink": meta["web_view_link"],
+                        "modifiedTime": meta["modified_time"],
+                        "snippet": doc[:320].strip(),
+                        "score": score,
+                        "relevance_hint": f"Semantic match · {round(score * 100)}% relevance",
+                    }
+
+            hits = sorted(seen.values(), key=lambda x: x["score"], reverse=True)
+
+            # ── Local LLM generation ────────────────────────────────────────
+            answer = None
+            answer_model = None
+            answer_error = None
+
+            if llm_chunks:
+                try:
+                    prompt = _build_rag_prompt(query, llm_chunks)
+                    answer = _call_local_llm(prompt, llm_cfg)
+                    answer_model = llm_cfg.get("model")
+                except Exception as llm_exc:
+                    answer_error = str(llm_exc)
+                    app.logger.warning("Local LLM call failed: %s", llm_exc)
+
+            return jsonify({
+                "query": query,
+                "answer": answer,
+                "answer_model": answer_model,
+                "answer_error": answer_error,
+                "results": hits,
+                "total": len(hits),
+                "source": "semantic",
+                "indexed": True,
+                "folder": folder_cfg,
+            })
+    except Exception as exc:
+        app.logger.warning("Semantic search error, falling back to keyword: %s", exc)
+
+    # ── Keyword fallback (index empty or unavailable) ───────────────────────
+    creds = _get_creds()
     if creds:
         service = _drive_service(creds)
         escaped = query.replace("'", "\\'")
-        conditions = [
-            f"name contains '{escaped}'",
-            "trashed = false",
-            _MIME_FILTER,
-        ]
+        conditions = [f"name contains '{escaped}'", "trashed = false", _MIME_FILTER]
         if folder_cfg and folder_cfg.get("folder_id"):
             conditions.append(f"'{folder_cfg['folder_id']}' in parents")
         try:
-            results = (
+            res = (
                 service.files()
                 .list(
                     q=" and ".join(conditions),
@@ -462,51 +791,109 @@ def rag_search():
                 )
                 .execute()
             )
-            files = results.get("files", [])
-        except Exception as e:
-            app.logger.error("rag live search error: %s", str(e))
+            files = res.get("files", [])
+        except Exception:
             files = []
     else:
         files = []
 
-    # Fall back to cached files with keyword scoring
     if not files:
         cache = _load_cache()
         words = [w.lower() for w in query.split() if w]
-        scored = []
-        for f in cache.get("files", []):
-            name_lower = f.get("name", "").lower()
-            score = sum(1 for w in words if w in name_lower)
-            if score > 0:
-                scored.append((score, f))
-        scored.sort(key=lambda x: x[0], reverse=True)
-        files = [f for _, f in scored[:10]]
+        scored = [
+            (sum(1 for w in words if w in f.get("name", "").lower()), f)
+            for f in cache.get("files", [])
+        ]
+        files = [f for score, f in sorted(scored, reverse=True) if score > 0][:10]
 
-    hits = []
     words = [w.lower() for w in query.split() if w]
-    for f in files:
-        name = f.get("name", "")
-        matched_words = [w for w in words if w in name.lower()]
-        hits.append({
+    hits = [
+        {
             "id": f.get("id"),
-            "name": name,
+            "name": f.get("name", ""),
             "mimeType": f.get("mimeType", ""),
             "modifiedTime": f.get("modifiedTime", ""),
             "webViewLink": f.get("webViewLink", ""),
             "size": f.get("size"),
+            "snippet": None,
+            "score": None,
             "relevance_hint": (
-                f"Matched on: {', '.join(matched_words)}" if matched_words
-                else "Matched via Drive full-text index"
+                "Matched: " + ", ".join(w for w in words if w in f.get("name", "").lower())
+                or "Drive full-text match"
             ),
-        })
+        }
+        for f in files
+    ]
 
     return jsonify({
         "query": query,
+        "answer": None,
+        "answer_model": None,
+        "answer_error": None,
         "results": hits,
         "total": len(hits),
-        "source": "live" if creds else "cache",
+        "source": "keyword",
+        "indexed": False,
         "folder": folder_cfg,
     })
+
+
+# ---------------------------------------------------------------------------
+# Local LLM management
+# ---------------------------------------------------------------------------
+
+@app.get("/rag/llm/status")
+def rag_llm_status():
+    """Check if the configured local LLM is reachable and list available models."""
+    cfg = _load_llm_config()
+    base_url = cfg.get("base_url", "http://localhost:11434").rstrip("/")
+    provider = cfg.get("provider", "ollama")
+
+    models: list[str] = []
+    reachable = False
+    error_msg = None
+
+    try:
+        if provider == "ollama":
+            models = _ollama_list_models(base_url)
+            reachable = True
+        else:
+            # OpenAI-compat: hit /v1/models
+            req = urllib.request.Request(
+                f"{base_url}/v1/models",
+                headers={"Accept": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read())
+            models = [m["id"] for m in data.get("data", [])]
+            reachable = True
+    except Exception as exc:
+        error_msg = str(exc)
+
+    return jsonify({
+        "reachable": reachable,
+        "provider": provider,
+        "base_url": base_url,
+        "current_model": cfg.get("model"),
+        "available_models": models,
+        "error": error_msg,
+    })
+
+
+@app.post("/rag/llm/config")
+def rag_llm_config():
+    """Save the local LLM configuration."""
+    payload = request.get_json(silent=True) or {}
+    base_url = payload.get("base_url", "").strip()
+    model = payload.get("model", "").strip()
+    provider = payload.get("provider", "ollama").strip()
+
+    if not base_url or not model:
+        return jsonify({"error": "base_url and model are required"}), 400
+
+    cfg = {"base_url": base_url, "model": model, "provider": provider}
+    _save_llm_config(cfg)
+    return jsonify({"status": "saved", **cfg})
 
 
 if __name__ == "__main__":

@@ -393,6 +393,172 @@ function handleFeatureSearch() {
 }
 
 // ---------------------------------------------------------------------------
+// Local LLM – status, model picker, config
+// ---------------------------------------------------------------------------
+async function loadLLMStatus() {
+  const dot = document.getElementById("llm-status-dot");
+  const label = document.getElementById("llm-status-label");
+  const modelSelect = document.getElementById("llm-model-select");
+  const urlInput = document.getElementById("llm-url-input");
+  const providerSelect = document.getElementById("llm-provider-select");
+  if (!dot) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/rag/llm/status`);
+    const data = await res.json();
+
+    // Restore saved URL + provider into the form
+    if (urlInput && data.base_url) urlInput.value = data.base_url;
+    if (providerSelect && data.provider) providerSelect.value = data.provider;
+    onProviderChange();
+
+    if (data.reachable) {
+      dot.className = "connection-dot connected";
+      label.textContent = `Local LLM: ${data.current_model || "connected"}`;
+
+      // Populate model dropdown
+      if (modelSelect && data.available_models?.length) {
+        modelSelect.innerHTML = data.available_models
+          .map(m => `<option value="${m}"${m === data.current_model ? " selected" : ""}>${m}</option>`)
+          .join("");
+        modelSelect.style.display = "";
+        const manualInput = document.getElementById("llm-model-input");
+        if (manualInput) manualInput.style.display = "none";
+      }
+    } else {
+      dot.className = "connection-dot disconnected";
+      label.textContent = "Local LLM: not running";
+      if (modelSelect) modelSelect.innerHTML = '<option value="">— not reachable —</option>';
+      // Show manual input so user can type a model name
+      const manualInput = document.getElementById("llm-model-input");
+      if (manualInput) { manualInput.style.display = ""; manualInput.value = data.current_model || ""; }
+      if (modelSelect) modelSelect.style.display = "none";
+    }
+  } catch {
+    if (dot) dot.className = "connection-dot disconnected";
+    if (label) label.textContent = "Local LLM: unavailable";
+  }
+}
+
+function onProviderChange() {
+  const provider = document.getElementById("llm-provider-select")?.value;
+  const urlInput = document.getElementById("llm-url-input");
+  if (!urlInput) return;
+  const current = urlInput.value.trim();
+  if (provider === "ollama" && (!current || current.includes("1234"))) {
+    urlInput.value = "http://localhost:11434";
+  } else if (provider === "openai_compat" && (!current || current.includes("11434"))) {
+    urlInput.value = "http://localhost:1234";
+  }
+}
+
+async function saveLLMConfig() {
+  const urlInput = document.getElementById("llm-url-input");
+  const providerSelect = document.getElementById("llm-provider-select");
+  const modelSelect = document.getElementById("llm-model-select");
+  const modelInput = document.getElementById("llm-model-input");
+
+  const base_url = urlInput?.value.trim();
+  const provider = providerSelect?.value || "ollama";
+  const model = (modelSelect?.style.display !== "none" ? modelSelect?.value : "")
+    || modelInput?.value.trim()
+    || modelSelect?.value;
+
+  if (!base_url || !model) {
+    showToast("Set a URL and model name first.", "error");
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/rag/llm/config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ base_url, model, provider }),
+    });
+    const data = await res.json();
+    if (data.error) { showToast(data.error, "error"); return; }
+    showToast(`LLM set to ${model}`, "success");
+    await loadLLMStatus();
+  } catch (err) {
+    showToast("Failed to save LLM config: " + err.message, "error");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// RAG – Index status + ingest
+// ---------------------------------------------------------------------------
+async function loadRagStatus() {
+  const badge = document.getElementById("rag-status-badge");
+  const ingestBtn = document.getElementById("btn-ingest");
+  if (!badge) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/rag/status`);
+    const data = await res.json();
+
+    if (data.ingest_running) {
+      const pct = data.ingest_progress?.total
+        ? Math.round((data.ingest_progress.processed / data.ingest_progress.total) * 100)
+        : 0;
+      badge.className = "badge badge-dim";
+      badge.textContent = `Indexing… ${pct}%`;
+      if (ingestBtn) ingestBtn.disabled = true;
+      setTimeout(loadRagStatus, 2000);
+      return;
+    }
+
+    if (data.indexed) {
+      badge.className = "badge badge-green";
+      badge.textContent = `✓ ${data.total_chunks.toLocaleString()} chunks indexed`;
+      if (ingestBtn) {
+        ingestBtn.disabled = false;
+        document.getElementById("ingest-btn-label").textContent = "⚡ Re-index";
+      }
+    } else {
+      badge.className = "badge badge-dim";
+      badge.textContent = "Not indexed";
+      if (ingestBtn) ingestBtn.disabled = false;
+    }
+  } catch {
+    if (badge) badge.textContent = "Index unavailable";
+  }
+}
+
+async function ragIngest() {
+  const btn = document.getElementById("btn-ingest");
+  const label = document.getElementById("ingest-btn-label");
+  const badge = document.getElementById("rag-status-badge");
+
+  if (btn) btn.disabled = true;
+  if (label) label.innerHTML = '<span class="spinner" style="width:12px;height:12px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:5px;"></span>Indexing…';
+  if (badge) { badge.className = "badge badge-dim"; badge.textContent = "Indexing…"; }
+
+  try {
+    const res = await fetch(`${API_BASE}/rag/ingest`, { method: "POST" });
+    const data = await res.json();
+
+    if (data.error) {
+      showToast(data.error, "error");
+      if (label) label.textContent = "⚡ Index Documents";
+      if (btn) btn.disabled = false;
+      return;
+    }
+
+    showToast(
+      `Indexed ${data.files_processed} files · ${data.total_chunks} chunks created`,
+      "success"
+    );
+    if (data.errors && data.errors.length > 0) {
+      console.warn("Ingest errors:", data.errors);
+    }
+  } catch (err) {
+    showToast("Indexing failed: " + err.message, "error");
+  } finally {
+    await loadRagStatus();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // RAG Search
 // ---------------------------------------------------------------------------
 async function ragSearch() {
@@ -408,7 +574,6 @@ async function ragSearch() {
     return;
   }
 
-  // Loading state
   if (btn) btn.disabled = true;
   if (btnLabel) btnLabel.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;"></span>';
   results.innerHTML = '<div class="flex-center" style="padding:20px 0;"><div class="spinner"></div></div>';
@@ -431,36 +596,91 @@ async function ragSearch() {
         <div class="rag-empty">
           <span style="font-size:1.6rem;">🤔</span>
           <p>No matching documents found for <strong>"${escapeHtml(query)}"</strong>.</p>
-          <p class="text-muted" style="font-size:.8rem;">Try syncing your Drive first, or rephrase your question.</p>
+          <p class="text-muted" style="font-size:.8rem;">
+            ${data.indexed
+              ? "Try rephrasing your question."
+              : "Index your documents first using ⚡ Index Docs above."}
+          </p>
         </div>`;
       return;
     }
 
-    const sourceLabel = data.source === "live" ? "Live Drive" : "Cached";
+    const isSemantic = data.source === "semantic";
     const folderLabel = data.folder?.folder_name
       ? `📁 ${escapeHtml(data.folder.folder_name)}`
       : "Entire Drive";
+    const sourceLabel = isSemantic ? "Semantic" : "Keyword";
 
-    results.innerHTML = `
-      <div class="rag-meta">
-        <span>${data.total} result${data.total !== 1 ? "s" : ""} for <strong>"${escapeHtml(query)}"</strong></span>
-        <span>${sourceLabel} · ${folderLabel}</span>
-      </div>
-      ${data.results.map((r, i) => `
+    // ── Answer card ──────────────────────────────────────────────────────
+    let answerHtml = "";
+    if (data.answer) {
+      answerHtml = `
+        <div class="rag-answer-card">
+          <div class="rag-answer-header">
+            <span class="rag-answer-icon">🤖</span>
+            <span class="rag-answer-title">AI Answer</span>
+            <span class="rag-answer-model">${escapeHtml(data.answer_model || "local LLM")}</span>
+          </div>
+          <div class="rag-answer-body">${escapeHtml(data.answer).replace(/\n/g, "<br>")}</div>
+        </div>`;
+    } else if (data.answer_error) {
+      answerHtml = `
+        <div class="rag-answer-card rag-answer-error">
+          <div class="rag-answer-header">
+            <span class="rag-answer-icon">⚠️</span>
+            <span class="rag-answer-title">Local LLM unavailable</span>
+          </div>
+          <div class="rag-answer-body" style="font-size:.8rem;color:var(--text-muted);">
+            ${escapeHtml(data.answer_error)}<br>
+            <em>Make sure Ollama is running and the model is configured below.</em>
+          </div>
+        </div>`;
+    } else if (isSemantic) {
+      answerHtml = `
+        <div class="rag-answer-card rag-answer-dim">
+          <div class="rag-answer-header">
+            <span class="rag-answer-icon">💡</span>
+            <span class="rag-answer-title">No answer generated</span>
+          </div>
+          <div class="rag-answer-body" style="font-size:.8rem;color:var(--text-muted);">
+            Configure and start a local LLM (Ollama) using the panel below to get AI-generated answers.
+          </div>
+        </div>`;
+    }
+
+    // ── Sources list ─────────────────────────────────────────────────────
+    const sourcesHtml = data.results.map((r, i) => {
+      const scoreBar = (isSemantic && r.score != null)
+        ? `<div class="rag-score-bar" style="--score:${Math.round(r.score * 100)}%"></div>`
+        : "";
+      const snippet = r.snippet
+        ? `<div class="rag-snippet">"${escapeHtml(r.snippet)}"</div>`
+        : "";
+      return `
         <a href="${r.webViewLink || '#'}" target="_blank" rel="noopener"
           class="rag-result-item" style="animation-delay:${i * 0.05}s">
           <div class="rag-result-icon">${getFileEmoji(r.mimeType)}</div>
           <div class="rag-result-body">
             <div class="rag-result-name">${escapeHtml(r.name)}</div>
+            ${snippet}
             <div class="rag-result-hint">${escapeHtml(r.relevance_hint || "")}</div>
+            ${scoreBar}
             <div class="rag-result-meta">
               ${formatMimeType(r.mimeType)}
               ${r.modifiedTime ? " · " + formatDate(r.modifiedTime) : ""}
-              ${r.size ? " · " + formatSize(r.size) : ""}
             </div>
           </div>
           <span class="rag-result-arrow">↗</span>
-        </a>`).join("")}`;
+        </a>`;
+    }).join("");
+
+    results.innerHTML = `
+      ${answerHtml}
+      <div class="rag-meta" style="margin-top:${answerHtml ? "12px" : "0"}">
+        <span>${data.total} source${data.total !== 1 ? "s" : ""} · <strong>"${escapeHtml(query)}"</strong></span>
+        <span>${sourceLabel} · ${folderLabel}</span>
+      </div>
+      ${sourcesHtml}`;
   } catch (err) {
     results.innerHTML = `<p class="text-muted" style="padding:8px 0;">RAG search failed: ${err.message}</p>`;
   } finally {
@@ -708,7 +928,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     loadDashboardStats();
     loadFolderBadge();
   }
-  if (document.getElementById("files-container")) loadFiles();
+  if (document.getElementById("files-container")) {
+    loadFiles();
+    loadRagStatus();
+    loadLLMStatus();
+  }
 
   // RAG search — Enter key support
   const ragInput = document.getElementById("rag-input");
