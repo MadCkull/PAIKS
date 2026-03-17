@@ -180,12 +180,17 @@ def _build_rag_prompt(query: str, chunks: list[dict]) -> str:
         ctx_parts.append(f"[{i}] Source: {c['name']}\n{c['text']}")
     context = "\n\n".join(ctx_parts)
     return (
-        "You are a helpful document assistant. "
-        "Answer the user's question using ONLY the document extracts below. "
-        "Be concise and cite source names where relevant. "
-        "If the answer is not contained in the documents, say so clearly.\n\n"
-        f"DOCUMENTS:\n{context}\n\n"
-        f"QUESTION: {query}\n\n"
+        "You are a knowledgeable document assistant with access to the user's personal document library. "
+        "Your task is to provide thorough, well-structured answers based ONLY on the document extracts provided below.\n\n"
+        "INSTRUCTIONS:\n"
+        "- Synthesize information from MULTIPLE document extracts when relevant — do not just quote one source.\n"
+        "- Cite source document names in square brackets like [Document Name] when referencing specific information.\n"
+        "- If the documents contain partial or related information, provide what you can and note any gaps.\n"
+        "- Structure longer answers with clear paragraphs. Use bullet points for lists.\n"
+        "- If the answer is NOT contained in the provided documents, say so clearly and suggest what kind of document might contain it.\n"
+        "- Be comprehensive but concise — cover all relevant points from the documents without unnecessary repetition.\n\n"
+        f"DOCUMENT EXTRACTS:\n{context}\n\n"
+        f"USER QUESTION: {query}\n\n"
         "ANSWER:"
     )
 
@@ -579,18 +584,59 @@ def _extract_text_from_drive(service, file_id, mime_type):
     return None
 
 
-def _chunk_text(text, chunk_size=600, overlap=120):
-    """Split text into overlapping character-level chunks."""
+def _split_sentences(text):
+    """Split text into sentences using simple heuristics."""
+    import re
+    # Split on sentence-ending punctuation followed by whitespace
+    parts = re.split(r'(?<=[.!?])\s+', text)
+    return [s.strip() for s in parts if s.strip()]
+
+
+def _chunk_text(text, chunk_size=1000, overlap=200):
+    """Split text into overlapping sentence-aware chunks.
+
+    Builds chunks by accumulating whole sentences up to *chunk_size* characters.
+    When the next sentence would exceed the limit, the current chunk is saved and
+    a new one starts with *overlap* characters of trailing context carried over so
+    that important concepts at chunk boundaries are not lost.
+    """
     text = " ".join(text.split())
     if not text:
         return []
-    chunks, start = [], 0
-    while start < len(text):
-        end = start + chunk_size
-        chunks.append(text[start:end])
-        if end >= len(text):
-            break
-        start = end - overlap
+
+    sentences = _split_sentences(text)
+    if not sentences:
+        return []
+
+    chunks = []
+    current = ""
+
+    for sent in sentences:
+        # If a single sentence is longer than chunk_size, split it by chars
+        if len(sent) > chunk_size:
+            if current:
+                chunks.append(current.strip())
+                current = ""
+            start = 0
+            while start < len(sent):
+                end = start + chunk_size
+                chunks.append(sent[start:end].strip())
+                start = end - overlap
+            continue
+
+        if len(current) + len(sent) + 1 > chunk_size:
+            chunks.append(current.strip())
+            # Carry overlap context from the end of the previous chunk
+            if len(current) > overlap:
+                current = current[-overlap:].lstrip() + " " + sent
+            else:
+                current = sent
+        else:
+            current = (current + " " + sent).strip() if current else sent
+
+    if current.strip():
+        chunks.append(current.strip())
+
     return chunks
 
 
@@ -705,21 +751,27 @@ def rag_search():
     try:
         col = _get_collection()
         if col.count() > 0:
-            n_retrieve = min(15, col.count())
+            n_retrieve = min(25, col.count())
             raw = col.query(
                 query_texts=[query],   # ChromaDB's ONNX EF embeds the query automatically
                 n_results=n_retrieve,
                 include=["documents", "metadatas", "distances"],
             )
 
-            # Raw chunks (top-5) passed to the LLM as context
+            # Raw chunks (top-10) passed to the LLM as context for comprehensive answers.
+            # Cap total context to ~6000 chars to stay within typical LLM context windows.
+            MAX_CONTEXT_CHARS = 6000
             llm_chunks: list[dict] = []
+            total_chars = 0
             for doc, meta, dist in zip(
-                raw["documents"][0][:5],
-                raw["metadatas"][0][:5],
-                raw["distances"][0][:5],
+                raw["documents"][0][:10],
+                raw["metadatas"][0][:10],
+                raw["distances"][0][:10],
             ):
+                if total_chars + len(doc) > MAX_CONTEXT_CHARS:
+                    break
                 llm_chunks.append({"name": meta["file_name"], "text": doc})
+                total_chars += len(doc)
 
             # Deduplicated source list for the UI (best chunk per file)
             seen: dict = {}

@@ -1,56 +1,60 @@
 {% extends "assistant/base.html" %}
-{% block title %}Files{% endblock %}
+{% block title %}AI Assistant{% endblock %}
 {% block nav_files %}active{% endblock %}
 
 {% block content %}
 <header class="page-header">
     <div>
-        <h1>File Browser</h1>
-        <p class="subtitle">Browse and search your synced Google Drive documents. Click any file to open it in Drive.</p>
+        <h1>AI Document Assistant</h1>
+        <p class="subtitle">Chat with your documents — ask questions and get AI-powered answers grounded in your files.</p>
     </div>
-    <div style="display:flex;gap:10px;align-items:center;">
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <span id="rag-status-badge" class="badge badge-dim" style="font-size:.75rem;">Checking index…</span>
+        <button id="btn-ingest" class="btn btn-sm" style="background:rgba(168,85,247,.15);color:#a855f7;border:1px solid rgba(168,85,247,.3);" onclick="ragIngest()">
+            <span id="ingest-btn-label">⚡ Index Docs</span>
+        </button>
         <button id="btn-connect" class="btn btn-primary btn-sm" onclick="connectDrive()">🔗 Connect Drive</button>
         <button id="btn-disconnect" class="btn btn-danger btn-sm hidden" onclick="disconnectDrive()">✕ Disconnect</button>
     </div>
 </header>
 
-<!-- Smart RAG Search panel -->
-<section class="rag-panel">
-    <!-- Header row -->
-    <div class="rag-panel-header">
-        <div class="feature-icon" style="background:rgba(168,85,247,.12);color:#a855f7;width:36px;height:36px;font-size:1.1rem;">🧠</div>
-        <div style="flex:1;">
-            <h2 class="rag-title">Smart RAG Search</h2>
-            <p class="rag-subtitle">Ask a natural-language question — answered by a local LLM grounded in your document content.</p>
+<!-- Chat-style RAG panel -->
+<section class="chat-container">
+    <!-- Chat messages area -->
+    <div id="chat-messages" class="chat-messages">
+        <div class="chat-welcome">
+            <div class="chat-welcome-icon">🧠</div>
+            <h2>Ask anything about your documents</h2>
+            <p>I can search through your indexed files and provide AI-generated answers grounded in your document content.</p>
+            <div class="chat-suggestions">
+                <button class="chat-suggestion" onclick="useSuggestion(this)">Summarize the key findings</button>
+                <button class="chat-suggestion" onclick="useSuggestion(this)">What are the main topics covered?</button>
+                <button class="chat-suggestion" onclick="useSuggestion(this)">List the important dates and deadlines</button>
+            </div>
         </div>
-        <!-- Index status + ingest -->
-        <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
-            <span id="rag-status-badge" class="badge badge-dim" style="font-size:.75rem;">Checking index…</span>
-            <button id="btn-ingest" class="btn btn-sm" style="background:rgba(168,85,247,.15);color:#a855f7;border:1px solid rgba(168,85,247,.3);" onclick="ragIngest()">
-                <span id="ingest-btn-label">⚡ Index Docs</span>
+    </div>
+
+    <!-- Chat input area -->
+    <div class="chat-input-area">
+        <div class="chat-input-row">
+            <input id="rag-input" class="chat-input"
+                placeholder="Ask a question about your documents…"
+                autocomplete="off" />
+            <button id="rag-btn" class="chat-send-btn" onclick="ragSearch()">
+                <span id="rag-btn-label">&#10148;</span>
             </button>
         </div>
-    </div>
-
-    <!-- Question input -->
-    <div class="rag-input-row">
-        <input id="rag-input" class="search-input rag-input"
-            placeholder="e.g. What are the project requirements? Summarise the budget report…"
-            autocomplete="off" />
-        <button id="rag-btn" class="btn rag-btn" onclick="ragSearch()">
-            <span id="rag-btn-label">Ask</span>
-        </button>
-    </div>
-
-    <!-- Results area -->
-    <div id="rag-results" class="rag-results"></div>
-
-    <!-- Local LLM configuration bar -->
-    <div class="llm-config-bar">
-        <div class="llm-config-left">
-            <span id="llm-status-dot" class="connection-dot disconnected"></span>
-            <span id="llm-status-label" class="llm-status-label">Local LLM: checking…</span>
+        <div class="chat-input-meta">
+            <div class="llm-config-left">
+                <span id="llm-status-dot" class="connection-dot disconnected"></span>
+                <span id="llm-status-label" class="llm-status-label">Local LLM: checking…</span>
+            </div>
+            <button class="chat-config-toggle" onclick="toggleLLMConfig()">&#9881; LLM Config</button>
         </div>
+    </div>
+
+    <!-- Collapsible LLM config -->
+    <div id="llm-config-panel" class="llm-config-panel hidden">
         <div class="llm-config-right">
             <select id="llm-provider-select" class="llm-select llm-provider-select" onchange="onProviderChange()">
                 <option value="ollama">Ollama</option>
