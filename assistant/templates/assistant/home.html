@@ -8,9 +8,8 @@
   <div id="auth-status-badge" class="badge badge-dim">
     <span class="connection-dot disconnected"></span> Not Connected
   </div>
-  <h1>Your Google Drive,<br />Supercharged with AI</h1>
-  <p>Connect your Google Drive to index, search, and explore all your documents with powerful AI-assisted search —
-    instantly.</p>
+  <h1>Unlock the power of AI</h1>
+  <p>Chat with your Google Drive documents — Experience the power of AI-assisted search and analysis.</p>
   <div class="hero-actions">
     <button id="btn-connect" class="btn btn-success" onclick="connectDrive()">
       🔗 Connect Google Drive
@@ -35,34 +34,34 @@
 <!-- Feature Cards -->
 <section class="features-grid mt-lg">
 
-  <!-- Smart Sync → triggers sync, then goes to dashboard -->
   <article class="card feature-card feature-card-clickable" id="card-sync"
     onclick="handleFeatureSync()" role="button" tabindex="0"
-    aria-label="Sync your Google Drive now">
-    <div class="feature-icon" style="background:var(--green-bg);color:var(--green);" id="sync-icon">🔄</div>
+    aria-label="Sync your Google Drive now"
+    style="background: linear-gradient(135deg, rgba(16,185,129,.06), rgba(16,185,129,.02)); border-color: rgba(16,185,129,.15);">
+    <div class="feature-icon" style="background:linear-gradient(135deg,#d1fae5,#a7f3d0);color:#059669;" id="sync-icon">🔄</div>
     <h3>Smart Sync</h3>
     <p>Automatically sync and index your Google Drive files. Stay up to date with one-click re-sync from the dashboard.</p>
-    <span class="feature-cta" style="color:var(--green);">Sync now →</span>
+    <span class="feature-cta" style="color:#059669;">Sync now →</span>
   </article>
 
-  <!-- AI Search → scrolls to search bar and focuses it -->
   <article class="card feature-card feature-card-clickable" id="card-search"
     onclick="handleFeatureSearch()" role="button" tabindex="0"
-    aria-label="Focus the AI search bar">
-    <div class="feature-icon" style="background:var(--accent-bg);color:var(--accent-light);">🔍</div>
+    aria-label="Focus the AI search bar"
+    style="background: linear-gradient(135deg, rgba(108,92,231,.06), rgba(108,92,231,.02)); border-color: rgba(108,92,231,.15);">
+    <div class="feature-icon" style="background:linear-gradient(135deg,#e0e7ff,#c7d2fe);color:#4f46e5;">🔍</div>
     <h3>AI-Powered Search</h3>
     <p>Search across all your documents with intelligent matching — not just file names. Try Smart RAG search too.</p>
-    <span class="feature-cta" style="color:var(--accent-light);">Start searching →</span>
+    <span class="feature-cta" style="color:#6c5ce7;">Start searching →</span>
   </article>
 
-  <!-- File Browser → navigates to /files/ -->
   <article class="card feature-card feature-card-clickable"
     onclick="window.location.href='{% url 'drive_files' %}'" role="button" tabindex="0"
-    aria-label="Open the file browser">
-    <div class="feature-icon" style="background:rgba(168,85,247,.12);color:#a855f7;">📁</div>
+    aria-label="Open the file browser"
+    style="background: linear-gradient(135deg, rgba(168,85,247,.06), rgba(168,85,247,.02)); border-color: rgba(168,85,247,.15);">
+    <div class="feature-icon" style="background:linear-gradient(135deg,#ede9fe,#ddd6fe);color:#7c3aed;">📁</div>
     <h3>File Browser</h3>
     <p>Browse and preview all your synced files with a sleek, modern interface. Jump to any file in one click.</p>
-    <span class="feature-cta" style="color:#a855f7;">Browse files →</span>
+    <span class="feature-cta" style="color:#7c3aed;">Browse files →</span>
   </article>
 
 </section>

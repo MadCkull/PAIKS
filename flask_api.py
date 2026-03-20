@@ -2,6 +2,7 @@ import io
 import json
 import os
 import pathlib
+import re
 import secrets
 import threading
 import urllib.parse
@@ -14,7 +15,7 @@ from googleapiclient.discovery import build
 
 app = Flask(__name__)
 app.secret_key = "paiks-dev-secret-key-change-in-prod"
-CORS(app, resources={r"/*": {"origins": "*"}})
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True, allow_headers=["Content-Type", "Authorization"], methods=["GET", "POST", "OPTIONS"])
 
 BASE_DIR = pathlib.Path(__file__).resolve().parent
 TOKEN_PATH = BASE_DIR / "token.json"
@@ -147,14 +148,23 @@ def _call_local_llm(prompt: str, cfg: dict) -> str:
 
     if provider == "ollama":
         endpoint = f"{base_url}/api/generate"
-        payload = {"model": model, "prompt": prompt, "stream": False}
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "num_predict": 256,      # cap response length for faster inference
+                "temperature": 0.3,
+            },
+        }
     else:
         # OpenAI-compatible (LM Studio, llama.cpp server, etc.)
         endpoint = f"{base_url}/v1/chat/completions"
         payload = {
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.2,
+            "temperature": 0.3,
+            "max_tokens": 512,
             "stream": False,
         }
 
@@ -164,7 +174,7 @@ def _call_local_llm(prompt: str, cfg: dict) -> str:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=120) as resp:
+    with urllib.request.urlopen(req, timeout=300) as resp:
         result = json.loads(resp.read())
 
     if provider == "ollama":
@@ -180,17 +190,9 @@ def _build_rag_prompt(query: str, chunks: list[dict]) -> str:
         ctx_parts.append(f"[{i}] Source: {c['name']}\n{c['text']}")
     context = "\n\n".join(ctx_parts)
     return (
-        "You are a knowledgeable document assistant with access to the user's personal document library. "
-        "Your task is to provide thorough, well-structured answers based ONLY on the document extracts provided below.\n\n"
-        "INSTRUCTIONS:\n"
-        "- Synthesize information from MULTIPLE document extracts when relevant — do not just quote one source.\n"
-        "- Cite source document names in square brackets like [Document Name] when referencing specific information.\n"
-        "- If the documents contain partial or related information, provide what you can and note any gaps.\n"
-        "- Structure longer answers with clear paragraphs. Use bullet points for lists.\n"
-        "- If the answer is NOT contained in the provided documents, say so clearly and suggest what kind of document might contain it.\n"
-        "- Be comprehensive but concise — cover all relevant points from the documents without unnecessary repetition.\n\n"
-        f"DOCUMENT EXTRACTS:\n{context}\n\n"
-        f"USER QUESTION: {query}\n\n"
+        "Answer using ONLY the documents below. Cite sources in [brackets]. Be concise.\n\n"
+        f"DOCUMENTS:\n{context}\n\n"
+        f"QUESTION: {query}\n\n"
         "ANSWER:"
     )
 
@@ -561,10 +563,7 @@ def _extract_text_from_drive(service, file_id, mime_type):
                 _, done = dl.next_chunk()
             return buf.getvalue().decode("utf-8", errors="ignore")
 
-        if mime_type in (
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "application/msword",
-        ):
+        if mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
             from googleapiclient.http import MediaIoBaseDownload
             import docx as docx_lib
             buf = io.BytesIO()
@@ -577,7 +576,18 @@ def _extract_text_from_drive(service, file_id, mime_type):
                 doc = docx_lib.Document(buf)
                 return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
             except Exception:
-                return buf.getvalue().decode("utf-8", errors="ignore")
+                # Don't fall back to raw bytes — binary data is useless for RAG
+                app.logger.warning("python-docx failed for %s, skipping", file_id)
+                return None
+
+        if mime_type == "application/msword":
+            # Legacy .doc files — try exporting via Google Docs conversion
+            try:
+                raw = service.files().export(fileId=file_id, mimeType="text/plain").execute()
+                return raw.decode("utf-8", errors="ignore") if isinstance(raw, bytes) else str(raw)
+            except Exception:
+                app.logger.warning("Legacy .doc export failed for %s, skipping", file_id)
+                return None
 
     except Exception as exc:
         app.logger.warning("extract_text failed for %s (%s): %s", file_id, mime_type, exc)
@@ -586,7 +596,6 @@ def _extract_text_from_drive(service, file_id, mime_type):
 
 def _split_sentences(text):
     """Split text into sentences using simple heuristics."""
-    import re
     # Split on sentence-ending punctuation followed by whitespace
     parts = re.split(r'(?<=[.!?])\s+', text)
     return [s.strip() for s in parts if s.strip()]
@@ -695,6 +704,14 @@ def rag_ingest():
             _ingest_progress["processed"] += 1
             continue
 
+        # Skip binary/garbage text — check that most chars are printable
+        printable_ratio = sum(1 for c in text[:500] if c.isprintable() or c in '\n\r\t') / max(len(text[:500]), 1)
+        if printable_ratio < 0.85:
+            app.logger.warning("Skipping %s — text appears to be binary (%.0f%% printable)", fname, printable_ratio * 100)
+            skipped += 1
+            _ingest_progress["processed"] += 1
+            continue
+
         chunks = _chunk_text(text)
         if not chunks:
             skipped += 1
@@ -760,13 +777,13 @@ def rag_search():
 
             # Raw chunks (top-10) passed to the LLM as context for comprehensive answers.
             # Cap total context to ~6000 chars to stay within typical LLM context windows.
-            MAX_CONTEXT_CHARS = 6000
+            MAX_CONTEXT_CHARS = 2000
             llm_chunks: list[dict] = []
             total_chars = 0
             for doc, meta, dist in zip(
-                raw["documents"][0][:10],
-                raw["metadatas"][0][:10],
-                raw["distances"][0][:10],
+                raw["documents"][0][:6],
+                raw["metadatas"][0][:6],
+                raw["distances"][0][:6],
             ):
                 if total_chars + len(doc) > MAX_CONTEXT_CHARS:
                     break

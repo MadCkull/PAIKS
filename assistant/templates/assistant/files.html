@@ -10,7 +10,7 @@
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
         <span id="rag-status-badge" class="badge badge-dim" style="font-size:.75rem;">Checking index…</span>
-        <button id="btn-ingest" class="btn btn-sm" style="background:rgba(168,85,247,.15);color:#a855f7;border:1px solid rgba(168,85,247,.3);" onclick="ragIngest()">
+        <button id="btn-ingest" class="btn btn-sm" style="background:var(--accent-bg);color:var(--accent);border:1.5px solid rgba(108,92,231,.2);" onclick="ragIngest()">
             <span id="ingest-btn-label">⚡ Index Docs</span>
         </button>
         <button id="btn-connect" class="btn btn-primary btn-sm" onclick="connectDrive()">🔗 Connect Drive</button>
@@ -18,9 +18,8 @@
     </div>
 </header>
 
-<!-- Chat-style RAG panel -->
+<!-- Chat -->
 <section class="chat-container">
-    <!-- Chat messages area -->
     <div id="chat-messages" class="chat-messages">
         <div class="chat-welcome">
             <div class="chat-welcome-icon">🧠</div>
@@ -34,7 +33,6 @@
         </div>
     </div>
 
-    <!-- Chat input area -->
     <div class="chat-input-area">
         <div class="chat-input-row">
             <input id="rag-input" class="chat-input"
@@ -53,7 +51,6 @@
         </div>
     </div>
 
-    <!-- Collapsible LLM config -->
     <div id="llm-config-panel" class="llm-config-panel hidden">
         <div class="llm-config-right">
             <select id="llm-provider-select" class="llm-select llm-provider-select" onchange="onProviderChange()">
@@ -70,7 +67,7 @@
     </div>
 </section>
 
-<!-- Plain file name filter -->
+<!-- File filter -->
 <section class="search-panel">
     <div class="search-row">
         <input id="file-search-input" class="search-input" placeholder="Filter files by name…" autocomplete="off" />

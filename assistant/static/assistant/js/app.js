@@ -583,7 +583,7 @@ function formatAnswer(text) {
   // Italic: *text*
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
   // [Source Name] citations — highlight them
-  html = html.replace(/\[([^\]]+)\]/g, '<strong style="color:#c084fc;">[$1]</strong>');
+  html = html.replace(/\[([^\]]+)\]/g, '<strong style="color:var(--accent-light);">[$1]</strong>');
   // Line breaks
   html = html.replace(/\n/g, '<br>');
   // Bullet points
@@ -616,7 +616,7 @@ function showTypingIndicator() {
   typing.className = "chat-typing";
   typing.id = "chat-typing-indicator";
   typing.innerHTML = `
-    <div class="chat-msg-avatar" style="background:linear-gradient(135deg,#a855f7,#6d28d9);">🧠</div>
+    <div class="chat-msg-avatar" style="background:linear-gradient(135deg,#6c5ce7,#a855f7);">🧠</div>
     <div class="chat-typing-dots"><span></span><span></span><span></span></div>`;
   container.appendChild(typing);
   container.scrollTop = container.scrollHeight;
