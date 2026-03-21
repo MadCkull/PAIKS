@@ -4,6 +4,14 @@
 
 const API_BASE = "http://127.0.0.1:5001";
 
+// Helper: fetch with timeout (default 30s)
+function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal })
+    .finally(() => clearTimeout(id));
+}
+
 // ---------------------------------------------------------------------------
 // Toast Notifications
 // ---------------------------------------------------------------------------
@@ -116,11 +124,11 @@ function initSearch() {
     resultsContainer.innerHTML = '<div class="flex-center mt-md"><div class="spinner"></div></div>';
 
     try {
-      const res = await fetch(`${API_BASE}/search`, {
+      const res = await fetchWithTimeout(`${API_BASE}/search`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query }),
-      });
+      }, 15000);
       const data = await res.json();
 
       if (data.error) {
@@ -146,7 +154,8 @@ function initSearch() {
         )
         .join("");
     } catch (err) {
-      resultsContainer.innerHTML = `<p class="text-muted mt-sm">Search failed: ${err.message}</p>`;
+      const msg = err.name === "AbortError" ? "Search timed out. Try again." : "Search failed: " + err.message;
+      resultsContainer.innerHTML = `<p class="text-muted mt-sm">${msg}</p>`;
     }
   };
 
@@ -649,11 +658,11 @@ async function ragSearch() {
   const typing = showTypingIndicator();
 
   try {
-    const res = await fetch(`${API_BASE}/rag/search`, {
+    const res = await fetchWithTimeout(`${API_BASE}/rag/search`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query }),
-    });
+    }, 60000);  // 60s for RAG (includes LLM inference)
     const data = await res.json();
     removeTypingIndicator();
 
@@ -716,9 +725,13 @@ async function ragSearch() {
 
   } catch (err) {
     removeTypingIndicator();
+    const isTimeout = err.name === "AbortError";
+    const errorMsg = isTimeout
+      ? "Request timed out. The LLM may be slow or not running. Try a shorter question or check your LLM config."
+      : "Search failed: " + err.message;
     addChatMessage("ai chat-msg-error", `
       <div class="chat-msg-avatar">🧠</div>
-      <div class="chat-msg-bubble">Search failed: ${escapeHtml(err.message)}</div>`);
+      <div class="chat-msg-bubble">${escapeHtml(errorMsg)}</div>`);
   } finally {
     if (btn) btn.disabled = false;
     if (btnLabel) btnLabel.innerHTML = "&#10148;";

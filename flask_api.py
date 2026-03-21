@@ -153,8 +153,9 @@ def _call_local_llm(prompt: str, cfg: dict) -> str:
             "prompt": prompt,
             "stream": False,
             "options": {
-                "num_predict": 256,      # cap response length for faster inference
+                "num_predict": 150,      # shorter response = faster inference
                 "temperature": 0.3,
+                "num_ctx": 2048,         # smaller context window for speed
             },
         }
     else:
@@ -164,7 +165,7 @@ def _call_local_llm(prompt: str, cfg: dict) -> str:
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.3,
-            "max_tokens": 512,
+            "max_tokens": 200,
             "stream": False,
         }
 
@@ -174,7 +175,7 @@ def _call_local_llm(prompt: str, cfg: dict) -> str:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=300) as resp:
+    with urllib.request.urlopen(req, timeout=45) as resp:
         result = json.loads(resp.read())
 
     if provider == "ollama":
@@ -184,16 +185,17 @@ def _call_local_llm(prompt: str, cfg: dict) -> str:
 
 
 def _build_rag_prompt(query: str, chunks: list[dict]) -> str:
-    """Build a grounded RAG prompt from retrieved chunks."""
+    """Build a compact RAG prompt — shorter prompt = faster inference."""
     ctx_parts = []
     for i, c in enumerate(chunks, 1):
-        ctx_parts.append(f"[{i}] Source: {c['name']}\n{c['text']}")
-    context = "\n\n".join(ctx_parts)
+        # Trim each chunk to max 400 chars to keep prompt small
+        text = c['text'][:400].strip()
+        ctx_parts.append(f"[{i}] {c['name']}: {text}")
+    context = "\n".join(ctx_parts)
     return (
-        "Answer using ONLY the documents below. Cite sources in [brackets]. Be concise.\n\n"
-        f"DOCUMENTS:\n{context}\n\n"
-        f"QUESTION: {query}\n\n"
-        "ANSWER:"
+        f"Answer briefly using only these docs. Cite [numbers].\n\n"
+        f"{context}\n\n"
+        f"Q: {query}\nA:"
     )
 
 
@@ -482,41 +484,51 @@ def search_documents():
     if not query:
         return jsonify({"error": "query is required"}), 400
 
+    # Always search cache first — it's instant
+    cache = _load_cache()
+    q_lower = query.lower()
+    words = [w for w in q_lower.split() if w]
+    cached_results = [
+        {
+            "id": f["id"],
+            "name": f["name"],
+            "mimeType": f.get("mimeType", ""),
+            "webViewLink": f.get("webViewLink", ""),
+            "modifiedTime": f.get("modifiedTime", ""),
+        }
+        for f in cache.get("files", [])
+        if any(w in f.get("name", "").lower() for w in words)
+    ]
+
+    if cached_results:
+        return jsonify({"query": query, "results": cached_results[:20], "source": "cache"})
+
+    # Cache miss — try live Drive API search (with a short timeout)
     creds = _get_creds()
     if not creds:
-        # Fallback: search cached files
-        cache = _load_cache()
-        results = [
-            {
-                "id": f["id"],
-                "name": f["name"],
-                "mimeType": f.get("mimeType", ""),
-                "webViewLink": f.get("webViewLink", ""),
-                "modifiedTime": f.get("modifiedTime", ""),
-            }
-            for f in cache.get("files", [])
-            if query.lower() in f.get("name", "").lower()
-        ]
-        return jsonify({"query": query, "results": results[:20], "source": "cache"})
+        return jsonify({"query": query, "results": [], "source": "cache"})
 
-    # Live search from Drive API — scoped to chosen folder if set
-    folder_cfg = _load_folder_config()
-    service = _drive_service(creds)
-    escaped = query.replace("'", "\\'")
-    conditions = [f"name contains '{escaped}'", "trashed = false", _MIME_FILTER]
-    if folder_cfg and folder_cfg.get("folder_id"):
-        conditions.append(f"'{folder_cfg['folder_id']}' in parents")
-    results = (
-        service.files()
-        .list(
-            q=" and ".join(conditions),
-            pageSize=20,
-            fields="files(id, name, mimeType, modifiedTime, webViewLink, iconLink, size)",
-            orderBy="modifiedTime desc",
+    try:
+        folder_cfg = _load_folder_config()
+        service = _drive_service(creds)
+        escaped = query.replace("'", "\\'")
+        conditions = [f"name contains '{escaped}'", "trashed = false", _MIME_FILTER]
+        if folder_cfg and folder_cfg.get("folder_id"):
+            conditions.append(f"'{folder_cfg['folder_id']}' in parents")
+        results = (
+            service.files()
+            .list(
+                q=" and ".join(conditions),
+                pageSize=20,
+                fields="files(id, name, mimeType, modifiedTime, webViewLink, iconLink, size)",
+                orderBy="modifiedTime desc",
+            )
+            .execute()
         )
-        .execute()
-    )
-    return jsonify({"query": query, "results": results.get("files", []), "source": "live"})
+        return jsonify({"query": query, "results": results.get("files", []), "source": "live"})
+    except Exception as e:
+        app.logger.warning("Live search failed, returning empty: %s", e)
+        return jsonify({"query": query, "results": [], "source": "error"})
 
 
 # ---------------------------------------------------------------------------
@@ -768,22 +780,21 @@ def rag_search():
     try:
         col = _get_collection()
         if col.count() > 0:
-            n_retrieve = min(25, col.count())
+            n_retrieve = min(10, col.count())
             raw = col.query(
                 query_texts=[query],   # ChromaDB's ONNX EF embeds the query automatically
                 n_results=n_retrieve,
                 include=["documents", "metadatas", "distances"],
             )
 
-            # Raw chunks (top-10) passed to the LLM as context for comprehensive answers.
-            # Cap total context to ~6000 chars to stay within typical LLM context windows.
-            MAX_CONTEXT_CHARS = 2000
+            # Top-3 chunks passed to the LLM — keep context small for fast inference.
+            MAX_CONTEXT_CHARS = 1500
             llm_chunks: list[dict] = []
             total_chars = 0
             for doc, meta, dist in zip(
-                raw["documents"][0][:6],
-                raw["metadatas"][0][:6],
-                raw["distances"][0][:6],
+                raw["documents"][0][:3],
+                raw["metadatas"][0][:3],
+                raw["distances"][0][:3],
             ):
                 if total_chars + len(doc) > MAX_CONTEXT_CHARS:
                     break
@@ -965,6 +976,19 @@ def rag_llm_config():
     return jsonify({"status": "saved", **cfg})
 
 
+def _prewarm_chroma():
+    """Load ChromaDB + ONNX embedding model at startup so first query is fast."""
+    try:
+        col = _get_collection()
+        if col.count() > 0:
+            # Warm up the embedding model with a tiny query
+            col.query(query_texts=["warmup"], n_results=1, include=["documents"])
+        app.logger.info("ChromaDB pre-warmed (%d chunks)", col.count())
+    except Exception as e:
+        app.logger.warning("ChromaDB pre-warm failed (non-fatal): %s", e)
+
+
 if __name__ == "__main__":
     os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"  # Allow HTTP for local dev
+    _prewarm_chroma()
     app.run(host="127.0.0.1", port=5001, debug=True)
