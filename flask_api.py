@@ -37,7 +37,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive.metadata.readonly",
 ]
 
-OAUTH_REDIRECT_URI = "http://localhost/PAIKS/oauth2callback"
+OAUTH_REDIRECT_URI = "http://127.0.0.1:5001/auth/callback"
 
 # Only these MIME types will be synced, browsed, and searched.
 ALLOWED_MIME_TYPES = [
@@ -153,9 +153,9 @@ def _call_local_llm(prompt: str, cfg: dict) -> str:
             "prompt": prompt,
             "stream": False,
             "options": {
-                "num_predict": 150,      # shorter response = faster inference
+                "num_predict": 300,
                 "temperature": 0.3,
-                "num_ctx": 2048,         # smaller context window for speed
+                "num_ctx": 4096,
             },
         }
     else:
@@ -175,7 +175,7 @@ def _call_local_llm(prompt: str, cfg: dict) -> str:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=45) as resp:
+    with urllib.request.urlopen(req, timeout=300) as resp:
         result = json.loads(resp.read())
 
     if provider == "ollama":
@@ -188,12 +188,11 @@ def _build_rag_prompt(query: str, chunks: list[dict]) -> str:
     """Build a compact RAG prompt — shorter prompt = faster inference."""
     ctx_parts = []
     for i, c in enumerate(chunks, 1):
-        # Trim each chunk to max 400 chars to keep prompt small
-        text = c['text'][:400].strip()
-        ctx_parts.append(f"[{i}] {c['name']}: {text}")
+        text = c['text'][:600].strip()
+        ctx_parts.append(f"[{i}] {text}")
     context = "\n".join(ctx_parts)
     return (
-        f"Answer briefly using only these docs. Cite [numbers].\n\n"
+        f"Based on these documents, answer the question helpfully. Cite sources as [1], [2], etc.\n\n"
         f"{context}\n\n"
         f"Q: {query}\nA:"
     )
@@ -578,6 +577,8 @@ def _extract_text_from_drive(service, file_id, mime_type):
         if mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
             from googleapiclient.http import MediaIoBaseDownload
             import docx as docx_lib
+            from lxml import etree
+            import zipfile
             buf = io.BytesIO()
             dl = MediaIoBaseDownload(buf, service.files().get_media(fileId=file_id))
             done = False
@@ -586,10 +587,61 @@ def _extract_text_from_drive(service, file_id, mime_type):
             buf.seek(0)
             try:
                 doc = docx_lib.Document(buf)
-                return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
-            except Exception:
-                # Don't fall back to raw bytes — binary data is useless for RAG
-                app.logger.warning("python-docx failed for %s, skipping", file_id)
+                parts = []
+                # Extract paragraphs
+                for p in doc.paragraphs:
+                    if p.text.strip():
+                        parts.append(p.text)
+                # Extract tables
+                for table in doc.tables:
+                    for row in table.rows:
+                        row_text = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                        if row_text:
+                            parts.append(" | ".join(row_text))
+                # Extract headers and footers
+                for section in doc.sections:
+                    for header_p in section.header.paragraphs:
+                        if header_p.text.strip():
+                            parts.append(header_p.text)
+                    for footer_p in section.footer.paragraphs:
+                        if footer_p.text.strip():
+                            parts.append(footer_p.text)
+                # If still empty, extract ALL text from the raw XML (catches text boxes, shapes, etc.)
+                if not parts:
+                    app.logger.info("python-docx API found no text for %s, trying raw XML extraction", file_id)
+                    buf.seek(0)
+                    with zipfile.ZipFile(buf) as zf:
+                        for name in zf.namelist():
+                            if name.endswith('.xml'):
+                                tree = etree.parse(zf.open(name))
+                                ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+                                for t_elem in tree.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t'):
+                                    if t_elem.text and t_elem.text.strip():
+                                        parts.append(t_elem.text)
+                    if parts:
+                        app.logger.info("Raw XML extraction found %d text fragments for %s", len(parts), file_id)
+                return "\n".join(parts) if parts else None
+            except Exception as exc:
+                app.logger.warning("python-docx failed for %s: %s", file_id, exc)
+                # Last resort: raw XML extraction from the downloaded bytes
+                try:
+                    buf.seek(0)
+                    import zipfile
+                    from lxml import etree
+                    parts = []
+                    with zipfile.ZipFile(buf) as zf:
+                        for name in zf.namelist():
+                            if name.endswith('.xml'):
+                                tree = etree.parse(zf.open(name))
+                                for t_elem in tree.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t'):
+                                    if t_elem.text and t_elem.text.strip():
+                                        parts.append(t_elem.text)
+                    if parts:
+                        app.logger.info("Raw XML fallback found %d text fragments for %s", len(parts), file_id)
+                        return "\n".join(parts)
+                except Exception:
+                    pass
+                app.logger.warning("All extraction methods failed for %s", file_id)
                 return None
 
         if mime_type == "application/msword":
@@ -712,21 +764,26 @@ def rag_ingest():
 
         text = _extract_text_from_drive(service, fid, mime)
         if not text or not text.strip():
+            app.logger.warning("Skipped '%s' (id=%s, mime=%s) — empty or no text extracted", fname, fid, mime)
             skipped += 1
+            errors.append(f"{fname}: empty text (mime={mime})")
             _ingest_progress["processed"] += 1
             continue
 
         # Skip binary/garbage text — check that most chars are printable
         printable_ratio = sum(1 for c in text[:500] if c.isprintable() or c in '\n\r\t') / max(len(text[:500]), 1)
         if printable_ratio < 0.85:
-            app.logger.warning("Skipping %s — text appears to be binary (%.0f%% printable)", fname, printable_ratio * 100)
+            app.logger.warning("Skipped '%s' — text appears to be binary (%.0f%% printable)", fname, printable_ratio * 100)
             skipped += 1
+            errors.append(f"{fname}: binary content ({printable_ratio*100:.0f}% printable)")
             _ingest_progress["processed"] += 1
             continue
 
         chunks = _chunk_text(text)
         if not chunks:
+            app.logger.warning("Skipped '%s' — text too short to chunk", fname)
             skipped += 1
+            errors.append(f"{fname}: too short to chunk")
             _ingest_progress["processed"] += 1
             continue
 
@@ -787,14 +844,14 @@ def rag_search():
                 include=["documents", "metadatas", "distances"],
             )
 
-            # Top-3 chunks passed to the LLM — keep context small for fast inference.
-            MAX_CONTEXT_CHARS = 1500
+            # Top-5 chunks — balanced context for local LLM speed.
+            MAX_CONTEXT_CHARS = 2000
             llm_chunks: list[dict] = []
             total_chars = 0
             for doc, meta, dist in zip(
-                raw["documents"][0][:3],
-                raw["metadatas"][0][:3],
-                raw["distances"][0][:3],
+                raw["documents"][0][:5],
+                raw["metadatas"][0][:5],
+                raw["distances"][0][:5],
             ):
                 if total_chars + len(doc) > MAX_CONTEXT_CHARS:
                     break

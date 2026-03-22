@@ -662,7 +662,7 @@ async function ragSearch() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query }),
-    }, 60000);  // 60s for RAG (includes LLM inference)
+    }, 300000);  // 5min for RAG (local LLM on CPU can be slow)
     const data = await res.json();
     removeTypingIndicator();
 
