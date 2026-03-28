@@ -21,10 +21,19 @@
   <button class="mobile-toggle" aria-label="Toggle sidebar">☰</button>
 
   <!-- Sidebar -->
-  <aside class="sidebar">
-    <div class="sidebar-logo">
-      <div class="logo-icon">⚡</div>
-      <span>PAIKS</span>
+  <aside class="sidebar" id="app-sidebar" aria-label="Main navigation">
+    <div class="sidebar-header">
+      <div class="sidebar-logo">
+        <div class="logo-icon">⚡</div>
+        <span class="sidebar-logo-text">PAIKS</span>
+      </div>
+      <button type="button" class="sidebar-collapse-toggle" id="sidebar-collapse-toggle"
+        aria-expanded="true" aria-controls="app-sidebar" title="Collapse sidebar">
+        <svg class="sidebar-collapse-icon" width="18" height="18" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M15 6l-6 6 6 6" />
+        </svg>
+      </button>
     </div>
 
     <nav>
@@ -32,17 +41,17 @@
       <ul class="nav-list">
         <li>
           <a class="nav-link {% block nav_home %}{% endblock %}" href="{% url 'home' %}">
-            <span class="nav-icon">🏠</span> Home
+            <span class="nav-icon">🏠</span><span class="nav-label">Home</span>
           </a>
         </li>
         <li>
           <a class="nav-link {% block nav_dashboard %}{% endblock %}" href="{% url 'dashboard' %}">
-            <span class="nav-icon">📊</span> Dashboard
+            <span class="nav-icon">📊</span><span class="nav-label">Dashboard</span>
           </a>
         </li>
         <li>
           <a class="nav-link {% block nav_files %}{% endblock %}" href="{% url 'drive_files' %}">
-            <span class="nav-icon">🧠</span> AI Assistant
+            <span class="nav-icon">🧠</span><span class="nav-label">AI Assistant</span>
           </a>
         </li>
       </ul>
@@ -69,11 +78,11 @@
 
     <!-- Theme Toggle -->
     <div class="theme-toggle-bar">
-      <button class="theme-toggle-btn active" data-theme="light" onclick="setTheme('light')">
-        ☀️ Light
+      <button type="button" class="theme-toggle-btn active" data-theme="light" onclick="setTheme('light')">
+        ☀️ <span class="theme-toggle-label">Light</span>
       </button>
-      <button class="theme-toggle-btn" data-theme="dark" onclick="setTheme('dark')">
-        🌙 Dark
+      <button type="button" class="theme-toggle-btn" data-theme="dark" onclick="setTheme('dark')">
+        🌙 <span class="theme-toggle-label">Dark</span>
       </button>
     </div>
   </aside>
