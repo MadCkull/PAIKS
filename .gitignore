@@ -1,0 +1,42 @@
+# Secrets & credentials (never commit)
+credentials.json
+token.json
+.env
+.env.*
+*.pem
+# SSH keys accidentally in project root
+paiks
+paiks.pub
+
+# Local / machine-specific runtime config
+folder_config.json
+llm_config.json
+drive_cache.json
+
+# Vector store (binary / large)
+chroma_db/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# IDE / tooling
+.claude/
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
