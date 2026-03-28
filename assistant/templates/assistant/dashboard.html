@@ -8,30 +8,30 @@
     <h1>Dashboard</h1>
     <p class="subtitle">Overview of your synced Google Drive documents and activity.</p>
   </div>
-  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-    <button id="btn-sync" class="btn btn-success btn-sm" onclick="triggerSync()">🔄 Sync Now</button>
-    <button id="btn-connect" class="btn btn-primary btn-sm" onclick="connectDrive()">🔗 Connect Drive</button>
-    <button id="btn-disconnect" class="btn btn-danger btn-sm hidden" onclick="disconnectDrive()">✕ Disconnect</button>
+  <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+    <button id="btn-sync" class="btn btn-success" onclick="triggerSync()">🔄 Sync Now</button>
+    <button id="btn-connect" class="btn btn-primary" onclick="connectDrive()">🔗 Connect Drive</button>
+    <button id="btn-disconnect" class="btn btn-danger hidden" onclick="disconnectDrive()">✕ Disconnect</button>
   </div>
 </header>
 
-<!-- Sync Scope Card (folder selector) -->
-<section class="card" style="border-color: rgba(99,102,241,0.5); background: rgba(15,23,42,0.97);">
-  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
-    <div>
+<!-- Sync Scope Card -->
+<section class="card" style="border-color: rgba(108,92,231,.2); background: linear-gradient(135deg, rgba(108,92,231,.04), transparent);">
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;">
+    <div style="flex:1;min-width:0;">
       <p class="card-label">📂 Sync Source</p>
       <p class="card-helper mt-sm">
         Only <strong>TXT, CSV, Google Docs,</strong> and <strong>Word (.doc/.docx)</strong> files
         will be fetched and searched. If no folder is set, these file types are pulled
         from <em>your entire Drive</em>.
       </p>
-      <div class="chips mt-sm">
+      <div class="chips" style="margin-top:14px;">
         <span id="folder-scope-badge" class="badge badge-dim">
           <span id="folder-scope-name">Loading…</span>
         </span>
       </div>
     </div>
-    <button class="btn btn-outline btn-sm" onclick="openFolderPicker()" style="white-space:nowrap;">
+    <button class="btn btn-outline" onclick="openFolderPicker()" style="white-space:nowrap;">
       📁 Choose Folder
     </button>
   </div>
@@ -39,45 +39,44 @@
 
 <!-- Stat Cards -->
 <section class="grid-3">
-  <article class="card">
+  <article class="card" style="border-color: rgba(108,92,231,.15); min-height: 180px;">
     <p class="card-label">Total Files Fetched</p>
     <p class="card-value" id="stat-total">—</p>
-    <p class="card-helper">Count of all files pulled from your chosen sync source.</p>
+    <p class="card-helper">All files pulled from your chosen sync source.</p>
   </article>
 
-  <article class="card">
+  <article class="card" style="border-color: rgba(16,185,129,.15); min-height: 180px;">
     <p class="card-label">Last Sync</p>
-    <p class="card-value" style="font-size:1.2rem;" id="stat-synced">—</p>
-    <p class="card-helper">Timestamp of the last successful sync operation.</p>
+    <p class="card-value" style="font-size:1.5rem;background:linear-gradient(135deg,var(--green),#059669);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;" id="stat-synced">—</p>
+    <p class="card-helper">Timestamp of the last successful sync.</p>
   </article>
 
-  <article class="card">
+  <article class="card" style="min-height: 180px;">
     <p class="card-label">Quick Search</p>
-    <p class="card-helper mt-sm">Search across files in your chosen folder.</p>
-    <div class="search-row mt-sm">
-      <input id="search-input" class="search-input" placeholder="Search files…" autocomplete="off"
-        style="font-size:.82rem;" />
-      <button id="search-btn" class="btn btn-primary btn-sm">🔍</button>
+    <p class="card-helper" style="margin-top:8px;">Search across files in your chosen folder.</p>
+    <div class="search-row" style="margin-top:16px;">
+      <input id="search-input" class="search-input" placeholder="Search files…" autocomplete="off" />
+      <button id="search-btn" class="btn btn-primary">🔍</button>
     </div>
   </article>
 </section>
 
-<!-- Search results (if any) -->
+<!-- Search results -->
 <div id="search-results" class="results-container"></div>
 
 <!-- File Type Distribution -->
 <section class="card">
   <p class="card-label">File Type Distribution</p>
-  <p class="card-helper mt-sm">Breakdown of file types synced from your Drive.</p>
-  <div class="chips mt-md" id="stat-types">
+  <p class="card-helper">Breakdown of file types synced from your Drive.</p>
+  <div class="chips" style="margin-top:16px;" id="stat-types">
     <span class="badge badge-dim">Sync your Drive to see distribution</span>
   </div>
 </section>
 
-<!-- Activity summary -->
+<!-- Activity -->
 <section class="card">
   <p class="card-label">Activity</p>
-  <div class="chips mt-sm">
+  <div class="chips" style="margin-top:14px;">
     <span id="auth-status-badge" class="badge badge-dim">
       <span class="connection-dot disconnected"></span> Checking…
     </span>

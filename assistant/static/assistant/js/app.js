@@ -4,6 +4,14 @@
 
 const API_BASE = "http://127.0.0.1:5001";
 
+// Helper: fetch with timeout (default 30s)
+function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal })
+    .finally(() => clearTimeout(id));
+}
+
 // ---------------------------------------------------------------------------
 // Toast Notifications
 // ---------------------------------------------------------------------------
@@ -29,27 +37,92 @@ function showToast(message, type = "info") {
 // ---------------------------------------------------------------------------
 // Auth helpers
 // ---------------------------------------------------------------------------
-async function checkAuthStatus() {
+async function fetchAuthState() {
   try {
     const res = await fetch(`${API_BASE}/auth/status`);
-    const data = await res.json();
-    return data.authenticated;
+    return await res.json();
   } catch {
-    return false;
+    return { authenticated: false, user: null };
+  }
+}
+
+async function checkAuthStatus() {
+  const data = await fetchAuthState();
+  return !!data.authenticated;
+}
+
+/** Sidebar: show Clerk name/email, or Drive user when Clerk is off. */
+function syncSidebarIdentity(connected, user) {
+  const nameEl = document.getElementById("sidebar-user-name");
+  const subEl = document.getElementById("sidebar-user-sub");
+  if (!nameEl) return;
+
+  if (typeof window.Clerk !== "undefined" && window.Clerk.user) {
+    const u = window.Clerk.user;
+    const primary =
+      u.fullName ||
+      [u.firstName, u.lastName].filter(Boolean).join(" ").trim() ||
+      u.primaryEmailAddress?.emailAddress ||
+      u.username ||
+      "Signed in";
+    nameEl.textContent = primary;
+    const em = u.primaryEmailAddress?.emailAddress;
+    if (subEl) {
+      if (em && em !== primary) {
+        subEl.textContent = em;
+        subEl.hidden = false;
+      } else {
+        subEl.textContent = "";
+        subEl.hidden = true;
+      }
+    }
+    return;
+  }
+
+  const dn = (user && (user.display_name || user.email || "").trim()) || "";
+  nameEl.textContent = connected && dn ? dn : "Guest";
+  if (subEl) {
+    if (connected && user?.email && user?.display_name && user.email !== user.display_name) {
+      subEl.textContent = user.email;
+      subEl.hidden = false;
+    } else {
+      subEl.textContent = "";
+      subEl.hidden = true;
+    }
   }
 }
 
 async function updateConnectionUI() {
-  const connected = await checkAuthStatus();
-  // Update sidebar dot
-  const dot = document.querySelector(".connection-dot");
-  if (dot) {
-    dot.className = `connection-dot ${connected ? "connected" : "disconnected"}`;
+  const data = await fetchAuthState();
+  const connected = !!data.authenticated;
+  const user = (data.user && typeof data.user === "object") ? data.user : {};
+
+  const sidebarDot = document.getElementById("sidebar-connection-dot");
+  if (sidebarDot) {
+    sidebarDot.className = `connection-dot ${connected ? "connected" : "disconnected"}`;
   }
-  const statusLabel = document.getElementById("connection-label");
-  if (statusLabel) {
-    statusLabel.textContent = connected ? "Google Drive Connected" : "Not Connected";
+
+  const subEl = document.getElementById("connection-label");
+  const badgeEl = document.getElementById("drive-profile-badge");
+  const driveTitle = document.getElementById("drive-link-title");
+  if (driveTitle) {
+    driveTitle.textContent = "Google Drive";
   }
+  if (subEl) {
+    if (connected) {
+      const email = (user.email || "").trim();
+      const gname = (user.display_name || "").trim();
+      subEl.textContent = gname && email ? `${gname} · ${email}` : email || gname || "Linked to your account";
+    } else {
+      subEl.textContent = "Not linked — connect from Home";
+    }
+  }
+  if (badgeEl) {
+    badgeEl.textContent = connected ? "Linked" : "";
+    badgeEl.hidden = !connected;
+  }
+
+  syncSidebarIdentity(connected, user);
 
   // Toggle connect / disconnect buttons
   const connectBtn = document.getElementById("btn-connect");
@@ -116,11 +189,11 @@ function initSearch() {
     resultsContainer.innerHTML = '<div class="flex-center mt-md"><div class="spinner"></div></div>';
 
     try {
-      const res = await fetch(`${API_BASE}/search`, {
+      const res = await fetchWithTimeout(`${API_BASE}/search`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query }),
-      });
+      }, 15000);
       const data = await res.json();
 
       if (data.error) {
@@ -146,7 +219,8 @@ function initSearch() {
         )
         .join("");
     } catch (err) {
-      resultsContainer.innerHTML = `<p class="text-muted mt-sm">Search failed: ${err.message}</p>`;
+      const msg = err.name === "AbortError" ? "Search timed out. Try again." : "Search failed: " + err.message;
+      resultsContainer.innerHTML = `<p class="text-muted mt-sm">${msg}</p>`;
     }
   };
 
@@ -559,133 +633,173 @@ async function ragIngest() {
 }
 
 // ---------------------------------------------------------------------------
-// RAG Search
+// RAG Chat Search
 // ---------------------------------------------------------------------------
+
+function toggleLLMConfig() {
+  const panel = document.getElementById("llm-config-panel");
+  if (panel) panel.classList.toggle("hidden");
+}
+
+function useSuggestion(btn) {
+  const input = document.getElementById("rag-input");
+  if (input) {
+    input.value = btn.textContent;
+    ragSearch();
+  }
+}
+
+function formatAnswer(text) {
+  // Simple markdown-like formatting for LLM answers
+  let html = escapeHtml(text);
+  // Bold: **text**
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // Italic: *text*
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // [Source Name] citations — highlight them
+  html = html.replace(/\[([^\]]+)\]/g, '<strong style="color:var(--accent-light);">[$1]</strong>');
+  // Line breaks
+  html = html.replace(/\n/g, '<br>');
+  // Bullet points
+  html = html.replace(/(?:^|<br>)[-•]\s+(.+?)(?=<br>|$)/g, '<li>$1</li>');
+  if (html.includes('<li>')) {
+    html = html.replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>');
+  }
+  return html;
+}
+
+function addChatMessage(type, content) {
+  const container = document.getElementById("chat-messages");
+  if (!container) return;
+  // Remove welcome screen on first message
+  const welcome = container.querySelector(".chat-welcome");
+  if (welcome) welcome.remove();
+
+  const msg = document.createElement("div");
+  msg.className = `chat-msg chat-msg-${type}`;
+  msg.innerHTML = content;
+  container.appendChild(msg);
+  container.scrollTop = container.scrollHeight;
+  return msg;
+}
+
+function showTypingIndicator() {
+  const container = document.getElementById("chat-messages");
+  if (!container) return null;
+  const typing = document.createElement("div");
+  typing.className = "chat-typing";
+  typing.id = "chat-typing-indicator";
+  typing.innerHTML = `
+    <div class="chat-msg-avatar" style="background:linear-gradient(135deg,#6c5ce7,#a855f7);">🧠</div>
+    <div class="chat-typing-dots"><span></span><span></span><span></span></div>`;
+  container.appendChild(typing);
+  container.scrollTop = container.scrollHeight;
+  return typing;
+}
+
+function removeTypingIndicator() {
+  const el = document.getElementById("chat-typing-indicator");
+  if (el) el.remove();
+}
+
 async function ragSearch() {
   const input = document.getElementById("rag-input");
-  const results = document.getElementById("rag-results");
   const btn = document.getElementById("rag-btn");
   const btnLabel = document.getElementById("rag-btn-label");
-  if (!input || !results) return;
+  if (!input) return;
 
   const query = input.value.trim();
-  if (!query) {
-    results.innerHTML = '<p class="text-muted" style="padding:8px 0;">Please enter a question.</p>';
-    return;
-  }
+  if (!query) return;
 
+  // Add user message bubble
+  addChatMessage("user", `
+    <div class="chat-msg-avatar">👤</div>
+    <div class="chat-msg-bubble">${escapeHtml(query)}</div>`);
+
+  input.value = "";
   if (btn) btn.disabled = true;
-  if (btnLabel) btnLabel.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;"></span>';
-  results.innerHTML = '<div class="flex-center" style="padding:20px 0;"><div class="spinner"></div></div>';
+  if (btnLabel) btnLabel.innerHTML = '<span class="spinner" style="width:16px;height:16px;border-width:2px;"></span>';
+
+  const typing = showTypingIndicator();
 
   try {
-    const res = await fetch(`${API_BASE}/rag/search`, {
+    const res = await fetchWithTimeout(`${API_BASE}/rag/search`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query }),
-    });
+    }, 300000);  // 5min for RAG (local LLM on CPU can be slow)
     const data = await res.json();
+    removeTypingIndicator();
 
     if (data.error) {
-      results.innerHTML = `<p class="text-muted" style="padding:8px 0;">${data.error}</p>`;
+      addChatMessage("ai chat-msg-error", `
+        <div class="chat-msg-avatar">🧠</div>
+        <div class="chat-msg-bubble">${escapeHtml(data.error)}</div>`);
       return;
     }
 
-    if (!data.results || data.results.length === 0) {
-      results.innerHTML = `
-        <div class="rag-empty">
-          <span style="font-size:1.6rem;">🤔</span>
-          <p>No matching documents found for <strong>"${escapeHtml(query)}"</strong>.</p>
-          <p class="text-muted" style="font-size:.8rem;">
-            ${data.indexed
-              ? "Try rephrasing your question."
-              : "Index your documents first using ⚡ Index Docs above."}
-          </p>
-        </div>`;
-      return;
-    }
+    // Build AI response
+    let answerContent = "";
 
-    const isSemantic = data.source === "semantic";
-    const folderLabel = data.folder?.folder_name
-      ? `📁 ${escapeHtml(data.folder.folder_name)}`
-      : "Entire Drive";
-    const sourceLabel = isSemantic ? "Semantic" : "Keyword";
-
-    // ── Answer card ──────────────────────────────────────────────────────
-    let answerHtml = "";
     if (data.answer) {
-      answerHtml = `
-        <div class="rag-answer-card">
-          <div class="rag-answer-header">
-            <span class="rag-answer-icon">🤖</span>
-            <span class="rag-answer-title">AI Answer</span>
-            <span class="rag-answer-model">${escapeHtml(data.answer_model || "local LLM")}</span>
-          </div>
-          <div class="rag-answer-body">${escapeHtml(data.answer).replace(/\n/g, "<br>")}</div>
-        </div>`;
+      answerContent = formatAnswer(data.answer);
+      if (data.answer_model) {
+        answerContent += `<div style="margin-top:8px;font-size:.7rem;color:var(--text-dim);">Answered by ${escapeHtml(data.answer_model)}</div>`;
+      }
     } else if (data.answer_error) {
-      answerHtml = `
-        <div class="rag-answer-card rag-answer-error">
-          <div class="rag-answer-header">
-            <span class="rag-answer-icon">⚠️</span>
-            <span class="rag-answer-title">Local LLM unavailable</span>
-          </div>
-          <div class="rag-answer-body" style="font-size:.8rem;color:var(--text-muted);">
-            ${escapeHtml(data.answer_error)}<br>
-            <em>Make sure Ollama is running and the model is configured below.</em>
-          </div>
-        </div>`;
-    } else if (isSemantic) {
-      answerHtml = `
-        <div class="rag-answer-card rag-answer-dim">
-          <div class="rag-answer-header">
-            <span class="rag-answer-icon">💡</span>
-            <span class="rag-answer-title">No answer generated</span>
-          </div>
-          <div class="rag-answer-body" style="font-size:.8rem;color:var(--text-muted);">
-            Configure and start a local LLM (Ollama) using the panel below to get AI-generated answers.
-          </div>
-        </div>`;
+      answerContent = `<span style="color:#fca5a5;">LLM unavailable: ${escapeHtml(data.answer_error)}</span><br><em style="font-size:.8rem;color:var(--text-dim);">Make sure Ollama is running.</em>`;
+    } else if (!data.results || data.results.length === 0) {
+      answerContent = `No matching documents found for <strong>"${escapeHtml(query)}"</strong>. ${
+        data.indexed ? "Try rephrasing your question." : "Index your documents first using ⚡ Index Docs."
+      }`;
+    } else {
+      answerContent = "I found relevant documents but couldn't generate an answer. Configure a local LLM in the settings below.";
     }
 
-    // ── Sources list ─────────────────────────────────────────────────────
-    const sourcesHtml = data.results.map((r, i) => {
-      const scoreBar = (isSemantic && r.score != null)
-        ? `<div class="rag-score-bar" style="--score:${Math.round(r.score * 100)}%"></div>`
-        : "";
-      const snippet = r.snippet
-        ? `<div class="rag-snippet">"${escapeHtml(r.snippet)}"</div>`
-        : "";
-      return `
-        <a href="${r.webViewLink || '#'}" target="_blank" rel="noopener"
-          class="rag-result-item" style="animation-delay:${i * 0.05}s">
-          <div class="rag-result-icon">${getFileEmoji(r.mimeType)}</div>
-          <div class="rag-result-body">
-            <div class="rag-result-name">${escapeHtml(r.name)}</div>
-            ${snippet}
-            <div class="rag-result-hint">${escapeHtml(r.relevance_hint || "")}</div>
-            ${scoreBar}
-            <div class="rag-result-meta">
-              ${formatMimeType(r.mimeType)}
-              ${r.modifiedTime ? " · " + formatDate(r.modifiedTime) : ""}
-            </div>
-          </div>
-          <span class="rag-result-arrow">↗</span>
-        </a>`;
-    }).join("");
+    // Build sources section
+    const isSemantic = data.source === "semantic";
+    let sourcesHtml = "";
+    if (data.results && data.results.length > 0) {
+      const uid = "src-" + Date.now();
+      const sourceItems = data.results.map(r => {
+        const scoreLabel = (isSemantic && r.score != null)
+          ? `<span class="chat-source-score">${Math.round(r.score * 100)}%</span>`
+          : "";
+        return `
+          <a href="${r.webViewLink || '#'}" target="_blank" rel="noopener" class="chat-source-item">
+            <span class="chat-source-icon">${getFileEmoji(r.mimeType)}</span>
+            <span class="chat-source-name">${escapeHtml(r.name)}</span>
+            ${scoreLabel}
+            <span style="color:var(--text-dim);font-size:.8rem;">↗</span>
+          </a>`;
+      }).join("");
 
-    results.innerHTML = `
-      ${answerHtml}
-      <div class="rag-meta" style="margin-top:${answerHtml ? "12px" : "0"}">
-        <span>${data.total} source${data.total !== 1 ? "s" : ""} · <strong>"${escapeHtml(query)}"</strong></span>
-        <span>${sourceLabel} · ${folderLabel}</span>
-      </div>
-      ${sourcesHtml}`;
+      sourcesHtml = `
+        <button class="chat-sources-toggle" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open');">
+          <span class="arrow">▶</span> ${data.total} source${data.total !== 1 ? "s" : ""} found
+        </button>
+        <div class="chat-sources-list">${sourceItems}</div>`;
+    }
+
+    addChatMessage("ai", `
+      <div class="chat-msg-avatar">🧠</div>
+      <div class="chat-msg-bubble">
+        ${answerContent}
+        ${sourcesHtml}
+      </div>`);
+
   } catch (err) {
-    results.innerHTML = `<p class="text-muted" style="padding:8px 0;">RAG search failed: ${err.message}</p>`;
+    removeTypingIndicator();
+    const isTimeout = err.name === "AbortError";
+    const errorMsg = isTimeout
+      ? "Request timed out. The LLM may be slow or not running. Try a shorter question or check your LLM config."
+      : "Search failed: " + err.message;
+    addChatMessage("ai chat-msg-error", `
+      <div class="chat-msg-avatar">🧠</div>
+      <div class="chat-msg-bubble">${escapeHtml(errorMsg)}</div>`);
   } finally {
     if (btn) btn.disabled = false;
-    if (btnLabel) btnLabel.textContent = "Ask";
+    if (btnLabel) btnLabel.innerHTML = "&#10148;";
   }
 }
 
@@ -852,8 +966,8 @@ async function initClerkAuth() {
 
   // Check if Clerk config is set
   if (typeof CLERK_FRONTEND_API === "undefined" || CLERK_FRONTEND_API === "YOUR_FRONTEND_API_URL") {
-    // Clerk not configured — skip auth, remove guard
     if (guard) guard.remove();
+    syncSidebarIdentity(false, {});
     return true;
   }
 
@@ -870,6 +984,7 @@ async function initClerkAuth() {
   if (!window.Clerk) {
     console.warn("Clerk SDK failed to load");
     if (guard) guard.remove();
+    syncSidebarIdentity(false, {});
     return true;
   }
 
@@ -888,6 +1003,8 @@ async function initClerkAuth() {
       afterSignOutUrl: "/login/",
     });
   }
+
+  syncSidebarIdentity(false, {});
 
   // Remove auth guard overlay
   if (guard) {

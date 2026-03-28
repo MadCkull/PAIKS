@@ -45,7 +45,7 @@
             font-size: 1.6rem;
             font-weight: 800;
             letter-spacing: -0.02em;
-            color: #fff;
+            color: var(--text);
         }
 
         .login-brand .logo-icon {
@@ -83,84 +83,84 @@
             padding: 60px 0;
         }
 
-        /* ---------- Override Clerk card to match dark theme ---------- */
+        /* ---------- Override Clerk card to match theme ---------- */
         .cl-card {
-            background: rgba(255, 255, 255, 0.04) !important;
-            border: 1px solid rgba(255, 255, 255, 0.08) !important;
+            background: var(--bg-card) !important;
+            border: 1px solid var(--border-dim) !important;
             backdrop-filter: blur(24px) !important;
             -webkit-backdrop-filter: blur(24px) !important;
             border-radius: 20px !important;
-            box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4) !important;
+            box-shadow: var(--shadow-xl) !important;
         }
 
         .cl-headerTitle {
-            color: #fff !important;
+            color: var(--text) !important;
         }
 
         .cl-headerSubtitle,
         .cl-footerActionText,
         .cl-dividerText {
-            color: rgba(255, 255, 255, 0.5) !important;
+            color: var(--text-muted) !important;
         }
 
         .cl-footerActionLink {
-            color: var(--accent-light, #60a5fa) !important;
+            color: var(--accent, #6c5ce7) !important;
         }
 
         .cl-formFieldLabel {
-            color: rgba(255, 255, 255, 0.7) !important;
+            color: var(--text-secondary) !important;
         }
 
         .cl-formFieldInput,
         .cl-input {
-            background: rgba(255, 255, 255, 0.06) !important;
-            border: 1px solid rgba(255, 255, 255, 0.12) !important;
-            color: #fff !important;
+            background: var(--bg-input) !important;
+            border: 1px solid var(--border-dim) !important;
+            color: var(--text) !important;
             border-radius: 12px !important;
         }
 
         .cl-formFieldInput::placeholder {
-            color: rgba(255, 255, 255, 0.35) !important;
+            color: var(--text-dim) !important;
         }
 
         .cl-formFieldInput:focus,
         .cl-input:focus {
-            border-color: var(--accent, #3b82f6) !important;
-            box-shadow: 0 0 0 3px var(--accent-glow, rgba(59, 130, 246, 0.15)) !important;
+            border-color: var(--accent, #6c5ce7) !important;
+            box-shadow: 0 0 0 3px var(--accent-glow) !important;
         }
 
         .cl-formButtonPrimary {
-            background: linear-gradient(135deg, var(--accent, #3b82f6), #a855f7) !important;
+            background: linear-gradient(135deg, var(--accent, #6c5ce7), #a855f7) !important;
             border: none !important;
             border-radius: 12px !important;
             font-weight: 600 !important;
-            box-shadow: 0 4px 16px var(--accent-glow, rgba(59, 130, 246, 0.3)) !important;
+            box-shadow: 0 4px 16px var(--accent-glow) !important;
             transition: transform .15s, box-shadow .15s !important;
         }
 
         .cl-formButtonPrimary:hover {
             transform: translateY(-1px) !important;
-            box-shadow: 0 6px 24px var(--accent-glow, rgba(59, 130, 246, 0.4)) !important;
+            box-shadow: 0 6px 24px var(--accent-glow) !important;
         }
 
         .cl-socialButtonsBlockButton {
-            background: rgba(255, 255, 255, 0.06) !important;
-            border: 1px solid rgba(255, 255, 255, 0.12) !important;
-            color: #fff !important;
+            background: var(--bg-input) !important;
+            border: 1px solid var(--border-dim) !important;
+            color: var(--text) !important;
             border-radius: 12px !important;
             transition: background .2s !important;
         }
 
         .cl-socialButtonsBlockButton:hover {
-            background: rgba(255, 255, 255, 0.1) !important;
+            background: var(--bg-card-hover) !important;
         }
 
         .cl-socialButtonsBlockButtonText {
-            color: #fff !important;
+            color: var(--text) !important;
         }
 
         .cl-dividerLine {
-            background: rgba(255, 255, 255, 0.1) !important;
+            background: var(--border-dim) !important;
         }
 
         .cl-cardBox {
@@ -172,23 +172,18 @@
             background: transparent !important;
         }
 
-        .cl-internal-pe6vm4,
-        .cl-internal-1dauvpw {
-            border-top-color: rgba(255, 255, 255, 0.06) !important;
-        }
-
         .cl-formFieldInputShowPasswordButton {
-            color: rgba(255, 255, 255, 0.4) !important;
+            color: var(--text-dim) !important;
         }
 
         .cl-formFieldInputShowPasswordButton:hover {
-            color: rgba(255, 255, 255, 0.7) !important;
+            color: var(--text-secondary) !important;
         }
 
         .cl-lastAuthenticationStrategyBadge {
-            background: rgba(59, 130, 246, 0.15) !important;
-            color: var(--accent-light, #60a5fa) !important;
-            border: 1px solid rgba(59, 130, 246, 0.25) !important;
+            background: var(--accent-bg) !important;
+            color: var(--accent, #6c5ce7) !important;
+            border: 1px solid var(--accent-glow) !important;
         }
     </style>
 </head>
@@ -245,12 +240,12 @@
                 await Clerk.load({
                     appearance: {
                         variables: {
-                            colorPrimary: '#3b82f6',
-                            colorBackground: 'rgba(255,255,255,0.04)',
-                            colorText: '#ffffff',
-                            colorTextSecondary: 'rgba(255,255,255,0.5)',
-                            colorInputBackground: 'rgba(255,255,255,0.06)',
-                            colorInputText: '#ffffff',
+                            colorPrimary: '#6c5ce7',
+                            colorBackground: '#ffffff',
+                            colorText: '#0f172a',
+                            colorTextSecondary: '#64748b',
+                            colorInputBackground: '#f5f6f8',
+                            colorInputText: '#0f172a',
                             borderRadius: '12px',
                             fontFamily: 'Inter, sans-serif',
                         },
@@ -272,12 +267,12 @@
                     afterSignUpUrl: '/',
                     appearance: {
                         variables: {
-                            colorPrimary: '#3b82f6',
-                            colorBackground: 'rgba(255,255,255,0.04)',
-                            colorText: '#ffffff',
-                            colorTextSecondary: 'rgba(255,255,255,0.5)',
-                            colorInputBackground: 'rgba(255,255,255,0.06)',
-                            colorInputText: '#ffffff',
+                            colorPrimary: '#6c5ce7',
+                            colorBackground: '#ffffff',
+                            colorText: '#0f172a',
+                            colorTextSecondary: '#64748b',
+                            colorInputBackground: '#f5f6f8',
+                            colorInputText: '#0f172a',
                             borderRadius: '12px',
                             fontFamily: 'Inter, sans-serif',
                         },

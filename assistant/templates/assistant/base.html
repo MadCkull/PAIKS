@@ -1,6 +1,6 @@
 {% load static %}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 
 <head>
   <meta charset="UTF-8" />
@@ -9,7 +9,7 @@
   <meta name="description" content="Connect your Google Drive and run AI-powered search over your documents." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="{% static 'assistant/css/styles.css' %}" />
   {% block extra_head %}{% endblock %}
 </head>
@@ -42,25 +42,43 @@
         </li>
         <li>
           <a class="nav-link {% block nav_files %}{% endblock %}" href="{% url 'drive_files' %}">
-            <span class="nav-icon">📁</span> Files
+            <span class="nav-icon">🧠</span> AI Assistant
           </a>
         </li>
       </ul>
     </nav>
 
-    <!-- Drive connection status -->
-    <div class="sidebar-footer" style="border-top:none;padding-bottom:4px;">
-      <span class="connection-dot disconnected"></span>
-      <span id="connection-label">Not Connected</span>
+    <!-- Account: Clerk + display name + Drive status -->
+    <div class="sidebar-footer sidebar-user-footer" id="clerk-user-section">
+      <div class="sidebar-user-primary">
+        <div id="clerk-user-button" class="clerk-user-button-mount"></div>
+        <div class="sidebar-user-text">
+          <span id="sidebar-user-name" class="sidebar-user-name"></span>
+          <span id="sidebar-user-sub" class="sidebar-user-sub" hidden></span>
+        </div>
+      </div>
+      <div class="drive-link-status" id="drive-link-status">
+        <span class="connection-dot disconnected" id="sidebar-connection-dot" aria-hidden="true"></span>
+        <div class="drive-link-copy">
+          <span class="drive-link-title" id="drive-link-title">Google Drive</span>
+          <span id="connection-label" class="drive-link-label">Not linked — use Home to connect</span>
+        </div>
+        <span class="profile-badge profile-badge--drive" id="drive-profile-badge" hidden>Linked</span>
+      </div>
     </div>
 
-    <!-- Clerk User section -->
-    <div class="sidebar-footer" id="clerk-user-section">
-      <div id="clerk-user-button" style="display:flex;align-items:center;gap:8px;"></div>
+    <!-- Theme Toggle -->
+    <div class="theme-toggle-bar">
+      <button class="theme-toggle-btn active" data-theme="light" onclick="setTheme('light')">
+        ☀️ Light
+      </button>
+      <button class="theme-toggle-btn" data-theme="dark" onclick="setTheme('dark')">
+        🌙 Dark
+      </button>
     </div>
   </aside>
 
-  <!-- Auth guard overlay (hidden by default, shown while checking auth) -->
+  <!-- Auth guard overlay -->
   <div id="auth-guard"
     style="position:fixed;inset:0;z-index:9999;background:var(--bg-deep);display:flex;align-items:center;justify-content:center;">
     <div class="spinner spinner-lg"></div>
@@ -75,13 +93,34 @@
     </footer>
   </main>
 
+  <!-- Theme init (before any rendering) -->
+  <script>
+    (function() {
+      var saved = localStorage.getItem('paiks-theme') || 'light';
+      document.documentElement.setAttribute('data-theme', saved);
+      // Update toggle buttons after DOM is ready
+      document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('.theme-toggle-btn').forEach(function(btn) {
+          btn.classList.toggle('active', btn.getAttribute('data-theme') === saved);
+        });
+      });
+    })();
+
+    function setTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      localStorage.setItem('paiks-theme', theme);
+      document.querySelectorAll('.theme-toggle-btn').forEach(function(btn) {
+        btn.classList.toggle('active', btn.getAttribute('data-theme') === theme);
+      });
+    }
+  </script>
+
   <!-- Clerk Config + SDK -->
   <script src="{% static 'assistant/js/clerk_config.js' %}"></script>
   <script>
     // Load Clerk SDK dynamically
     (function () {
       if (!CLERK_FRONTEND_API || CLERK_FRONTEND_API === "YOUR_FRONTEND_API_URL") {
-        // Clerk not configured — remove auth guard and let app work without auth
         const guard = document.getElementById('auth-guard');
         if (guard) guard.remove();
         return;
