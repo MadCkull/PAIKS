@@ -460,10 +460,7 @@ async function handleFeatureSync() {
 }
 
 function handleFeatureSearch() {
-  const input = document.getElementById("search-input");
-  if (!input) return;
-  input.scrollIntoView({ behavior: "smooth", block: "center" });
-  setTimeout(() => input.focus(), 400);
+  window.location.href = "/files/#ai-assistant-chat";
 }
 
 // ---------------------------------------------------------------------------
@@ -1049,6 +1046,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     loadFiles();
     loadRagStatus();
     loadLLMStatus();
+    if (window.location.hash === "#ai-assistant-chat") {
+      requestAnimationFrame(() => {
+        const chat = document.getElementById("ai-assistant-chat");
+        if (chat) chat.scrollIntoView({ behavior: "smooth", block: "start" });
+        const rag = document.getElementById("rag-input");
+        if (rag) setTimeout(() => rag.focus(), 400);
+      });
+    }
   }
 
   // RAG search — Enter key support
