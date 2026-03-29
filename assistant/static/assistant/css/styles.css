@@ -105,6 +105,7 @@ body {
   color: var(--text-primary);
   height: 100vh;
   overflow: hidden;
+  display: flex;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   transition: background 0.3s ease, color 0.3s ease;
@@ -476,6 +477,44 @@ a { color: inherit; text-decoration: none; }
   width: 1px; height: 20px;
   background: var(--glass-border);
   margin: 0 4px;
+}
+
+.tab-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  padding: 8px;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  overflow: hidden;
+  user-select: none;
+}
+.tab-btn:hover:not(.active) {
+  background-color: var(--glass-bg-hover);
+  color: var(--text-primary);
+}
+.tab-btn.active {
+  background-color: var(--glass-bg-active);
+  color: var(--text-primary);
+}
+.tab-btn svg { flex-shrink: 0; }
+
+.tab-label {
+  white-space: nowrap;
+  max-width: 0;
+  opacity: 0;
+  margin-left: 0;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.tab-btn.active .tab-label {
+  max-width: 150px;
+  opacity: 1;
+  margin-left: 8px;
+  padding-right: 6px;
 }
 
 .page-header {
