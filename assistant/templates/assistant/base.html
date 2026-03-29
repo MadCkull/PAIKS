@@ -1,6 +1,6 @@
 {% load static %}
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="dark">
 
 <head>
   <meta charset="UTF-8" />
@@ -10,6 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="{% static 'assistant/css/colors.css' %}" />
   <link rel="stylesheet" href="{% static 'assistant/css/styles.css' %}" />
   {% block extra_head %}{% endblock %}
 </head>
@@ -105,7 +106,7 @@
   <!-- Theme init (before any rendering) -->
   <script>
     (function() {
-      var saved = localStorage.getItem('paiks-theme') || 'light';
+      var saved = localStorage.getItem('paiks-theme') || 'dark';
       document.documentElement.setAttribute('data-theme', saved);
       // Update toggle buttons after DOM is ready
       document.addEventListener('DOMContentLoaded', function() {
