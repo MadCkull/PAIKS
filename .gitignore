@@ -1,42 +1,84 @@
-# Secrets & credentials (never commit)
-credentials.json
-token.json
-.env
-.env.*
-*.pem
-# SSH keys accidentally in project root
-paiks
-paiks.pub
-
-# Local / machine-specific runtime config
-folder_config.json
-llm_config.json
-drive_cache.json
-
-# Vector store (binary / large)
-chroma_db/
-
-# Python
+# ==========================================
+# Python & Virtual Environments
+# ==========================================
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+*.pyd
+*.pyo
 .Python
 .venv/
 venv/
+ENV/
 env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-# Django
-*.log
-local_settings.py
+# ==========================================
+# Django & Databases
+# ==========================================
 db.sqlite3
 db.sqlite3-journal
+*.log
+local_settings.py
+media/
+staticfiles/
 
-# IDE / tooling
-.claude/
-.idea/
+# ==========================================
+# Flask
+# ==========================================
+instance/
+.webassets-cache
+.flaskenv
+
+# ==========================================
+# Credentials, Secrets & Configs
+# ==========================================
+.env
+.env.*
+credentials.json
+token.json
+*.pem
+paiks
+paiks.pub
+
+# ==========================================
+# IDEs & Tooling
+# ==========================================
 .vscode/
+.idea/
+.claude/
+*.swp
+*.swo
 
-# OS
+# ==========================================
+# OS Specific
+# ==========================================
 .DS_Store
 Thumbs.db
+Desktop.ini
+
+# ==========================================
+# Project Specific
+# ==========================================
+drive_cache.json
+folder_config.json
+llm_config.json
+chroma_db/
+UIConcept/
