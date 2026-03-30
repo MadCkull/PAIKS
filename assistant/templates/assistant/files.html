@@ -284,6 +284,7 @@
     </div>
     <div class="modal-body">
 
+      <!-- Filter Bar -->
       <div class="dash-filter-bar">
         <div class="pill-toggle" id="dash-filter">
           <button class="pill-btn active" data-filter="all">All Sources</button>
@@ -292,47 +293,59 @@
         </div>
       </div>
 
+      <!-- Key Metrics -->
       <div class="stats-grid">
         <div class="stat-card">
           <h4>Total Files Indexed</h4>
           <div class="value" id="stat-total">—</div>
-          <div class="breakdown">
-            <span class="cloud-val"><span class="dot c"></span> <span id="stat-cloud">0</span> cloud</span>
-            <span class="local-val"><span class="dot l"></span> <span id="stat-local">0</span> local</span>
+          <div class="breakdown" id="stat-total-breakdown">
+            <span class="cloud-val"><span class="dot c"></span> <span id="stat-cloud">—</span></span>
+            <span class="local-val"><span class="dot l"></span> <span id="stat-local">—</span></span>
           </div>
         </div>
         <div class="stat-card">
           <h4>ChromaDB Embeddings</h4>
           <div class="value" id="stat-embeddings">—</div>
+          <div class="breakdown">
+            <span class="cloud-val"><span class="dot c"></span> <span id="stat-emb-cloud">—</span></span>
+            <span class="local-val"><span class="dot l"></span> <span id="stat-emb-local">—</span></span>
+          </div>
         </div>
         <div class="stat-card">
           <h4>Last Sync</h4>
           <div class="value" id="stat-sync" style="font-size:1.4rem;">—</div>
-        </div>
-      </div>
-
-      <div style="margin-top:28px;">
-        <h4 style="font-size:.9rem;color:var(--text-secondary);margin-bottom:16px;font-weight:500;">File Type Distribution</h4>
-        <div id="dist-bars">
-          <div class="dist-bar-row">
-            <span class="dist-bar-label">Loading…</span>
+          <div class="breakdown">
+            <span class="cloud-val"><span class="dot c"></span> <span id="stat-sync-cloud">—</span></span>
           </div>
         </div>
       </div>
 
+      <!-- File Type Distribution -->
+      <div style="margin-top:28px;">
+        <h4 style="font-size:.9rem;color:var(--text-secondary);margin-bottom:16px;font-weight:500;">File Type Distribution</h4>
+        <div id="dist-bars">
+          <div class="dist-bar-row"><span class="dist-bar-label" style="color:var(--text-dim);">Loading…</span></div>
+        </div>
+      </div>
+
+      <!-- Second Row Stats -->
       <div class="stats-grid" style="margin-top:28px;">
+        <div class="stat-card">
+          <h4>Total Storage Indexed</h4>
+          <div class="value" id="stat-storage" style="font-size:1.5rem;">—</div>
+          <div class="breakdown">
+            <span class="cloud-val"><span class="dot c"></span> <span id="stat-storage-cloud">—</span></span>
+            <span class="local-val"><span class="dot l"></span> <span id="stat-storage-local">—</span></span>
+          </div>
+        </div>
         <div class="stat-card">
           <h4>Chat Sessions</h4>
           <div class="value" id="stat-sessions">0</div>
         </div>
         <div class="stat-card">
           <h4>LLM Status</h4>
-          <div class="value" id="stat-llm" style="font-size:1.2rem;color:var(--color-success);">Checking…</div>
+          <div class="value" id="stat-llm" style="font-size:1.2rem;">Checking…</div>
           <p id="stat-llm-model" style="font-size:.8rem;color:var(--text-dim);margin-top:4px;"></p>
-        </div>
-        <div class="stat-card">
-          <h4>Drive Status</h4>
-          <div class="value" id="stat-drive" style="font-size:1.2rem;">—</div>
         </div>
       </div>
 

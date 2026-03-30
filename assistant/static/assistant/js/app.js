@@ -303,39 +303,103 @@ async function loadDashboardStats() {
 }
 
 // ---------------------------------------------------------------------------
-// Dashboard modal stats (new UI)
+// Dashboard modal stats (new UI) — real data
 // ---------------------------------------------------------------------------
+const MIME_LABELS = {
+  document:     "Word / GDocs",
+  plain:        "Text (.txt)",
+  csv:          "CSV (.csv)",
+  spreadsheet:  "Spreadsheet",
+  presentation: "Presentation",
+  pdf:          "PDF (.pdf)",
+  "x-python":   "Python (.py)",
+  python:       "Python (.py)",
+  markdown:     "Markdown",
+  json:         "JSON",
+};
+
+function formatBytes(bytes) {
+  if (!bytes || bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+}
+
+function timeAgo(isoString) {
+  if (!isoString || isoString === "Not synced yet") return "Never";
+  const diff = Math.floor((Date.now() - new Date(isoString)) / 1000);
+  if (diff < 60)   return diff + "s ago";
+  if (diff < 3600) return Math.floor(diff / 60) + "m ago";
+  if (diff < 86400) return Math.floor(diff / 3600) + "h ago";
+  return Math.floor(diff / 86400) + "d ago";
+}
+
 async function updateDashboardStats() {
+  // 1. Drive stats
   try {
     const res = await fetch(`${API_BASE}/drive/stats`);
     const data = await res.json();
     const total = data.documents_total || 0;
-    const el = document.getElementById("stat-total");
-    if (el) el.textContent = total;
-    const cloudEl = document.getElementById("stat-cloud");
-    if (cloudEl) cloudEl.textContent = data.cloud_total || total;
-    const localEl = document.getElementById("stat-local");
-    if (localEl) localEl.textContent = data.local_total || 0;
-    const syncEl = document.getElementById("stat-sync");
-    if (syncEl) syncEl.textContent = data.synced_at && data.synced_at !== "Not synced yet"
-      ? formatDate(data.synced_at) : "Never";
-    const driveEl = document.getElementById("stat-drive");
-    const connected = await checkAuthStatus();
-    if (driveEl) driveEl.textContent = connected ? "✓ Connected" : "Not connected";
-    if (driveEl) driveEl.style.color = connected ? "var(--color-success)" : "var(--color-error)";
+
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    set("stat-total",       total);
+    set("stat-cloud",       total);   // all indexed files are from Drive (cloud)
+    set("stat-local",       0);
+    set("stat-sync",        timeAgo(data.synced_at));
+    set("stat-sync-cloud",  timeAgo(data.synced_at));
+
+    // File type distribution bars
+    const fileTypes = data.file_types || {};
+    const entries = Object.entries(fileTypes).sort((a, b) => b[1] - a[1]);
+    const maxCount = entries.length ? entries[0][1] : 1;
+    const distEl = document.getElementById("dist-bars");
+    if (distEl && entries.length > 0) {
+      distEl.innerHTML = entries.slice(0, 8).map(([type, count]) => {
+        const label = MIME_LABELS[type] || type;
+        const pct = Math.max(4, Math.round((count / total) * 80));
+        return `<div class="dist-bar-row">
+          <span class="dist-bar-label">${escapeHtml(label)}</span>
+          <div class="dist-bar-track">
+            <div class="dist-bar-fill cloud-fill" style="width:${pct}%;">${count}</div>
+          </div>
+          <span class="dist-bar-total">${count}</span>
+        </div>`;
+      }).join("");
+    } else if (distEl) {
+      distEl.innerHTML = `<p style="color:var(--text-dim);font-size:.85rem;">No files indexed yet.</p>`;
+    }
+
+    // Storage estimate (size field may not exist — show placeholder)
+    const totalBytes = (data.total_size_bytes || 0);
+    set("stat-storage",       totalBytes ? formatBytes(totalBytes) : "—");
+    set("stat-storage-cloud", totalBytes ? formatBytes(totalBytes) : "—");
+    set("stat-storage-local", "0 B");
   } catch (_) {}
 
-  // LLM status
+  // 2. ChromaDB embeddings
   try {
     const res = await fetch(`${API_BASE}/rag/status`);
     const data = await res.json();
-    const llmEl = document.getElementById("stat-llm");
+    const chunks = data.total_chunks || 0;
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    set("stat-embeddings",   chunks.toLocaleString());
+    set("stat-emb-cloud",    chunks.toLocaleString());
+    set("stat-emb-local",    "0");
+  } catch (_) {}
+
+  // 3. LLM status
+  try {
+    const res = await fetch(`${API_BASE}/rag/llm/status`);
+    const data = await res.json();
+    const llmEl    = document.getElementById("stat-llm");
     const llmModel = document.getElementById("stat-llm-model");
     if (llmEl) {
-      llmEl.textContent = data.llm_ok ? "✓ Online" : "✗ Offline";
-      llmEl.style.color = data.llm_ok ? "var(--color-success)" : "var(--color-error)";
+      llmEl.textContent  = data.reachable ? "● Online" : "● Offline";
+      llmEl.style.color  = data.reachable ? "var(--color-success)" : "var(--color-error)";
     }
-    if (llmModel) llmModel.textContent = data.model || "";
+    if (llmModel) llmModel.textContent = data.provider
+      ? `${data.provider} / ${data.current_model || "—"}` : "";
   } catch (_) {}
 }
 
@@ -1132,10 +1196,10 @@ function initToolbar() {
   tabBtns.forEach(btn => {
     btn.addEventListener("click", () => {
       const action = btn.dataset.action;
-      if (action === "settings")   openModal("settings-overlay");
-      if (action === "drive")      openModal("drive-overlay");
-      if (action === "dashboard")  openModal("dashboard-overlay");
-      if (action === "theme")      toggleTheme();
+      if (action === "settings")  { openModal("settings-overlay"); }
+      if (action === "drive")     { openModal("drive-overlay"); }
+      if (action === "dashboard") { openModal("dashboard-overlay"); updateDashboardStats(); }
+      if (action === "theme")     { toggleTheme(); }
     });
   });
 
