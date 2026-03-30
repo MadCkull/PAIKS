@@ -1377,6 +1377,81 @@ a { color: inherit; text-decoration: none; }
 .suggestion-card p { margin: 0; font-size: 0.9rem; color: var(--text-primary); }
 
 /* =====================================================================
+   SOURCES SLIDE-OUT PANEL
+   ===================================================================== */
+.slide-panel-overlay {
+  position: absolute;
+  inset: 0;
+  background: transparent;
+  z-index: 90;
+  pointer-events: none;
+}
+.slide-panel-overlay.active { pointer-events: auto; }
+
+.slide-panel {
+  position: absolute;
+  right: 0; top: 0; bottom: 0;
+  width: 400px;
+  background: var(--sidebar-bg);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  border-left: 1px solid var(--glass-border-light);
+  box-shadow: -12px 0 48px rgba(0, 0, 0, 0.4);
+  transform: translateX(100%);
+  transition: transform 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+  display: flex;
+  flex-direction: column;
+  z-index: 95;
+  pointer-events: auto;
+}
+.slide-panel.open { transform: translateX(0); }
+
+.panel-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--glass-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+}
+.panel-header h3 { font-size: 1.1rem; font-weight: 600; color: var(--text-primary); }
+
+.panel-body { padding: 20px 24px; flex: 1; overflow-y: auto; }
+
+.source-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  margin-bottom: 12px;
+  transition: border-color 0.2s;
+}
+.source-item:hover { border-color: var(--glass-border-light); }
+
+.source-item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--accent-hover);
+}
+
+.source-snippet {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  background: rgba(0, 0, 0, 0.1);
+  padding: 12px;
+  border-radius: 8px;
+  border-left: 3px solid var(--accent);
+  line-height: 1.5;
+}
+[data-theme="light"] .source-snippet { background: rgba(0, 0, 0, 0.03); }
+
+/* =====================================================================
    ANIMATIONS
    ===================================================================== */
 @keyframes fadeSlideUp {
