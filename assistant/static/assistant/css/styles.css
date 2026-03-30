@@ -1575,6 +1575,55 @@ a { color: inherit; text-decoration: none; }
 .tree-node .meta { font-size: .7rem; color: var(--text-dim); margin-left: auto; white-space: nowrap; }
 .tree-node .meta-warn { font-size: .7rem; color: var(--color-warning); margin-left: auto; white-space: nowrap; }
 
+/* Local file upload zone */
+.local-drop-zone {
+  border: 2px dashed var(--glass-border-light);
+  border-radius: 12px;
+  padding: 28px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  color: var(--text-dim);
+  text-align: center;
+}
+.local-drop-zone:hover, .local-drop-zone.drag-over {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent-hover);
+}
+.drop-label { font-size: .88rem; color: var(--text-secondary); margin: 0; }
+.drop-link { color: var(--accent); cursor: pointer; text-decoration: underline; }
+.drop-hint { font-size: .75rem; color: var(--text-dim); margin: 0; }
+
+/* Upload progress bar */
+.upload-progress-bar { height: 4px; background: var(--glass-bg); border-radius: 99px; overflow: hidden; }
+.upload-progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), #a855f7); border-radius: 99px; transition: width 0.3s; width: 0%; }
+
+/* Local file list items */
+.local-file-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  margin-bottom: 6px;
+}
+.local-file-item .lf-icon { font-size: 1.1rem; flex-shrink: 0; }
+.local-file-item .lf-info { flex: 1; min-width: 0; }
+.local-file-item .lf-name { font-size: .85rem; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.local-file-item .lf-meta { font-size: .72rem; color: var(--text-dim); margin-top: 2px; }
+.local-file-item .lf-del {
+  background: none; border: none; color: var(--text-dim); cursor: pointer;
+  padding: 4px 6px; border-radius: 6px; font-size: .8rem; flex-shrink: 0;
+  transition: color 0.15s;
+}
+.local-file-item .lf-del:hover { color: var(--color-error); }
+
 .drive-console { flex: 1; display: flex; flex-direction: column; background: rgba(0,0,0,.3); }
 .console-header { padding: 12px 16px; border-bottom: 1px solid var(--glass-border); font-family: monospace; font-size: .85rem; color: var(--color-success); }
 .console-logs { flex: 1; padding: 16px; overflow-y: auto; font-family: monospace; font-size: .8rem; color: #a1a1aa; }
