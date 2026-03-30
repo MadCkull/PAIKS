@@ -62,13 +62,12 @@ function getInitials(name) {
   return clean.slice(0, 2).toUpperCase();
 }
 
-/** Sidebar: show user avatar initials + name. */
+/** Sidebar: populate user name next to Clerk avatar. */
 function syncSidebarIdentity(connected, user) {
-  const nameEl   = document.getElementById("sidebar-user-name");
-  const avatarEl = document.getElementById("sidebar-avatar");
+  const nameEl = document.getElementById("sidebar-user-name");
+  if (!nameEl) return;
 
   let displayName = "Guest";
-
   if (typeof window.Clerk !== "undefined" && window.Clerk.user) {
     const u = window.Clerk.user;
     displayName =
@@ -81,8 +80,7 @@ function syncSidebarIdentity(connected, user) {
     displayName = (user.display_name || user.email || "Guest").trim();
   }
 
-  if (nameEl) nameEl.textContent = displayName;
-  if (avatarEl) avatarEl.textContent = getInitials(displayName);
+  nameEl.textContent = displayName;
 }
 
 async function updateConnectionUI() {

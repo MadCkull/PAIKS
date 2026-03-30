@@ -395,6 +395,9 @@ a { color: inherit; text-decoration: none; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.clerk-user-button-mount { flex-shrink: 0; display: flex; align-items: center; }
+.clerk-user-button-mount button { background: none !important; border: none !important; padding: 0 !important; cursor: pointer; }
+.clerk-user-button-mount img { width: 28px; height: 28px; border-radius: 50%; display: block; }
 .sidebar.collapsed .footer-btn { justify-content: center; padding: 8px 0; }
 .sidebar.collapsed .footer-btn #sidebar-user-name { display: none; }
 
