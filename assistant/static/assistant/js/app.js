@@ -472,6 +472,232 @@ async function updateSettingsModal() {
   } catch (_) {}
 }
 
+// ---------------------------------------------------------------------------
+// Drive Manager modal — real data
+// ---------------------------------------------------------------------------
+let _driveFiles = [];   // cached for search filtering
+let _ragFiles   = [];   // cached local rag files
+
+function driveFileIcon(mime) {
+  if (!mime) return "📄";
+  if (mime.includes("folder"))          return "📁";
+  if (mime.includes("spreadsheet") || mime.includes("excel") || mime.includes("csv")) return "📊";
+  if (mime.includes("presentation") || mime.includes("slide")) return "📽️";
+  if (mime.includes("pdf"))             return "📕";
+  if (mime.includes("image"))           return "🖼️";
+  if (mime.includes("python") || mime.endsWith(".py")) return "🐍";
+  if (mime.includes("document") || mime.includes("doc") || mime.includes("text")) return "📝";
+  return "📄";
+}
+
+function formatSize(bytes) {
+  if (!bytes) return "";
+  const b = parseInt(bytes);
+  if (b < 1024)       return b + " B";
+  if (b < 1048576)    return Math.round(b / 1024) + " KB";
+  return (b / 1048576).toFixed(1) + " MB";
+}
+
+function renderCloudTree(files, folderName, query = "") {
+  const cloudEl = document.getElementById("tree-cloud");
+  if (!cloudEl) return;
+
+  if (!files || files.length === 0) {
+    cloudEl.innerHTML = `
+      <div style="text-align:center;padding:40px 20px;">
+        <div style="font-size:2rem;margin-bottom:12px;">☁️</div>
+        <p style="color:var(--text-secondary);margin-bottom:16px;">
+          ${_driveFiles.length === 0 ? "Connect Google Drive to see your files." : "No files match your search."}
+        </p>
+        ${_driveFiles.length === 0 ? `<button class="btn-primary" style="width:auto;padding:10px 24px;" onclick="connectDrive()">Connect Drive</button>` : ""}
+      </div>`;
+    return;
+  }
+
+  const filtered = query
+    ? files.filter(f => f.name.toLowerCase().includes(query.toLowerCase()))
+    : files;
+
+  const root = folderName || "Google Drive";
+  let html = `
+    <div class="tree-node" style="font-weight:600;">
+      <input type="checkbox" checked style="accent-color:var(--cloud);">
+      <span>📁</span>
+      <span class="name">${escapeHtml(root)}</span>
+      <span class="meta" style="color:var(--cloud);">${filtered.length} files</span>
+    </div>
+    <div style="padding-left:24px;">`;
+
+  filtered.forEach(f => {
+    const icon = driveFileIcon(f.mimeType);
+    const size = formatSize(f.size);
+    html += `
+      <div class="tree-node">
+        <input type="checkbox" checked style="accent-color:var(--cloud);">
+        <span>${icon}</span>
+        <span class="name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
+        ${size ? `<span class="meta">${size}</span>` : ""}
+      </div>`;
+  });
+
+  html += `</div>`;
+  cloudEl.innerHTML = html;
+}
+
+function renderLocalTree(ragStatus) {
+  const localEl = document.getElementById("tree-local");
+  if (!localEl) return;
+
+  const count = ragStatus?.total_chunks || 0;
+  const indexed = ragStatus?.indexed || false;
+
+  if (!indexed) {
+    localEl.innerHTML = `
+      <div style="text-align:center;padding:40px 20px;">
+        <div style="font-size:2rem;margin-bottom:12px;">💻</div>
+        <p style="color:var(--text-secondary);margin-bottom:16px;">No local documents indexed yet.</p>
+        <button class="btn-primary" style="width:auto;padding:10px 24px;" onclick="ragIngest()">⚡ Index Now</button>
+      </div>`;
+    return;
+  }
+
+  localEl.innerHTML = `
+    <div class="tree-node" style="font-weight:600;">
+      <input type="checkbox" checked style="accent-color:var(--local);">
+      <span>💻</span>
+      <span class="name">Local Documents</span>
+      <span class="meta" style="color:var(--local);">${count} chunks indexed</span>
+    </div>
+    <div style="padding-left:24px;">
+      <div class="tree-node">
+        <input type="checkbox" checked style="accent-color:var(--local);">
+        <span>📦</span>
+        <span class="name">ChromaDB Vector Store</span>
+        <span class="meta" style="color:var(--local);">${count.toLocaleString()} embeddings</span>
+      </div>
+    </div>`;
+}
+
+function consoleLog(msg, type = "info") {
+  const el = document.getElementById("sync-console");
+  if (!el) return;
+  const cls = { ok: "log-ok", warn: "log-warn", info: "log-info", done: "log-ok" }[type] || "log-info";
+  const line = document.createElement("div");
+  line.className = cls;
+  line.textContent = msg;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+async function updateDriveModal() {
+  // Load cloud files
+  try {
+    const statsRes = await fetch(`${API_BASE}/drive/stats`);
+    const stats = await statsRes.json();
+
+    if (!stats.authenticated) {
+      renderCloudTree([], null);
+      const el = document.getElementById("sync-console");
+      if (el) el.innerHTML = `<div class="log-warn">[WARN] Not connected to Google Drive.</div>`;
+    } else {
+      const filesRes = await fetch(`${API_BASE}/drive/files?pageSize=100`);
+      const filesData = await filesRes.json();
+      _driveFiles = filesData.files || [];
+      const folderName = filesData.folder?.name || stats.folder?.name || "Google Drive";
+      renderCloudTree(_driveFiles, folderName);
+
+      const el = document.getElementById("sync-console");
+      if (el) {
+        el.innerHTML = "";
+        consoleLog(`[OK] Connected to Google Drive`, "ok");
+        consoleLog(`[INFO] Folder: ${folderName}`, "info");
+        consoleLog(`[INFO] ${_driveFiles.length} files in cache`, "info");
+        if (stats.synced_at && stats.synced_at !== "Not synced yet") {
+          consoleLog(`[OK] Last sync: ${timeAgo(stats.synced_at)}`, "ok");
+        } else {
+          consoleLog(`[INFO] Not synced yet — click Sync Now`, "info");
+        }
+      }
+    }
+  } catch (e) {
+    renderCloudTree([], null);
+    consoleLog(`[ERROR] ${e.message}`, "warn");
+  }
+
+  // Load local/RAG status
+  try {
+    const ragRes = await fetch(`${API_BASE}/rag/status`);
+    const ragData = await ragRes.json();
+    renderLocalTree(ragData);
+    if (ragData.indexed) {
+      consoleLog(`[OK] ChromaDB: ${ragData.total_chunks} embeddings stored`, "ok");
+    }
+  } catch (_) {
+    renderLocalTree(null);
+  }
+
+  // Search filtering
+  const searchInput = document.getElementById("drive-search-input");
+  if (searchInput) {
+    searchInput.value = "";
+    searchInput.oninput = () => {
+      const q = searchInput.value.trim();
+      const statsRes2 = fetch(`${API_BASE}/drive/stats`)
+        .then(r => r.json())
+        .then(s => renderCloudTree(_driveFiles, s.folder?.name || "Google Drive", q))
+        .catch(() => {});
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sync Now — triggers Drive sync then RAG ingest with console output
+// ---------------------------------------------------------------------------
+async function triggerSync() {
+  const btn = document.getElementById("btn-sync-now");
+  if (btn) { btn.disabled = true; btn.textContent = "⏳ Syncing…"; }
+
+  const el = document.getElementById("sync-console");
+  if (el) el.innerHTML = "";
+
+  consoleLog("[INFO] Starting Google Drive sync…", "info");
+
+  try {
+    const res = await fetchWithTimeout(`${API_BASE}/drive/sync`, { method: "POST" }, 60000);
+    const data = await res.json();
+
+    if (data.error) {
+      consoleLog(`[ERROR] ${data.error}`, "warn");
+    } else {
+      consoleLog(`[OK] Drive sync complete — ${data.total} files indexed`, "ok");
+      consoleLog(`[INFO] Synced at: ${timeAgo(data.synced_at)}`, "info");
+      _driveFiles = [];  // clear cache so tree reloads
+      await updateDriveModal();  // reload tree
+
+      // Also start RAG ingest
+      consoleLog("[INFO] Starting RAG ingest…", "info");
+      try {
+        const ingestRes = await fetchWithTimeout(`${API_BASE}/rag/ingest`, { method: "POST" }, 300000);
+        const ingestData = await ingestRes.json();
+        if (ingestData.error) {
+          consoleLog(`[WARN] Ingest: ${ingestData.error}`, "warn");
+        } else {
+          consoleLog(`[OK] RAG ingest complete — ${ingestData.total_chunks || "?"} chunks`, "ok");
+          consoleLog("[DONE] Full sync completed", "ok");
+        }
+      } catch (ie) {
+        consoleLog(`[WARN] Ingest: ${ie.message}`, "warn");
+      }
+    }
+  } catch (e) {
+    consoleLog(`[ERROR] Sync failed: ${e.message}`, "warn");
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "🔄 Sync Now"; }
+    updateToolbarContext();
+    updateDashboardStats();
+  }
+}
+
 // Also update toolbar context with file counts
 async function updateToolbarContext() {
   try {
@@ -1266,7 +1492,7 @@ function initToolbar() {
     btn.addEventListener("click", () => {
       const action = btn.dataset.action;
       if (action === "settings")  { openModal("settings-overlay");  updateSettingsModal(); }
-      if (action === "drive")     { openModal("drive-overlay"); }
+      if (action === "drive")     { openModal("drive-overlay");     updateDriveModal(); }
       if (action === "dashboard") { openModal("dashboard-overlay"); updateDashboardStats(); }
       if (action === "theme")     { toggleTheme(); }
     });

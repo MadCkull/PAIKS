@@ -219,9 +219,10 @@
 <div id="drive-overlay" class="overlay hidden">
   <div class="modal modal-fullscreen">
     <div class="modal-header">
-      <h3>📁 Drive Manager</h3>
+      <h3>📂 Drive Manager</h3>
       <div style="display:flex;gap:12px;align-items:center;">
-        <button class="btn-primary" style="width:auto;padding:8px 20px;margin:0;font-size:.85rem;"
+        <button class="btn-primary" id="btn-sync-now"
+          style="width:auto;padding:8px 20px;margin:0;font-size:.85rem;"
           onclick="triggerSync()">🔄 Sync Now</button>
         <button class="btn-close" onclick="closeModal('drive-overlay')">✕</button>
       </div>
@@ -236,30 +237,16 @@
               <button class="pill-btn active cloud-active" data-tab="cloud">☁️ Cloud</button>
               <button class="pill-btn" data-tab="local">💻 Local</button>
             </div>
-            <input type="text" class="form-input"
+            <input type="text" id="drive-search-input" class="form-input"
               placeholder="Search files…"
-              style="width:200px;padding:6px 12px;font-size:.85rem;" />
+              style="width:200px;padding:6px 12px;font-size:.85rem;border:1px solid var(--input-border);border-radius:8px;" />
           </div>
 
-          <!-- Cloud Tree -->
-          <div class="tree-view" id="tree-cloud">
-            <div class="empty-state" style="min-height:unset;padding:40px 20px;">
-              <div class="empty-icon" style="font-size:2rem;">☁️</div>
-              <p style="color:var(--text-secondary);">Connect Google Drive to see your files.</p>
-              <button class="btn-primary" style="width:auto;padding:10px 24px;margin-top:16px;"
-                onclick="connectDrive()">Connect Drive</button>
-            </div>
-          </div>
+          <!-- Cloud Tree — populated by JS -->
+          <div class="tree-view" id="tree-cloud"></div>
 
-          <!-- Local Tree -->
-          <div class="tree-view" id="tree-local" style="display:none;">
-            <div class="empty-state" style="min-height:unset;padding:40px 20px;">
-              <div class="empty-icon" style="font-size:2rem;">💻</div>
-              <p style="color:var(--text-secondary);">Index your local documents to see them here.</p>
-              <button class="btn-primary" style="width:auto;padding:10px 24px;margin-top:16px;"
-                onclick="ragIngest()">⚡ Index Now</button>
-            </div>
-          </div>
+          <!-- Local Tree — populated by JS -->
+          <div class="tree-view" id="tree-local" style="display:none;"></div>
         </div>
 
         <!-- Sync Console -->
