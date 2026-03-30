@@ -535,39 +535,133 @@ function renderCloudTree(files, folderName, query = "") {
   cloudEl.innerHTML = html;
 }
 
-function renderLocalTree(ragStatus) {
-  const localEl = document.getElementById("tree-local");
-  if (!localEl) return;
+function localFileIcon(ext) {
+  const map = { ".pdf": "📄", ".docx": "📝", ".doc": "📝", ".txt": "📃", ".md": "📃", ".csv": "📊" };
+  return map[ext] || "📎";
+}
 
-  const count = ragStatus?.total_chunks || 0;
-  const indexed = ragStatus?.indexed || false;
-
-  if (!indexed) {
-    localEl.innerHTML = `
-      <div style="text-align:center;padding:40px 20px;">
-        <div style="font-size:2rem;margin-bottom:12px;">💻</div>
-        <p style="color:var(--text-secondary);margin-bottom:16px;">No local documents indexed yet.</p>
-        <button class="btn-primary" style="width:auto;padding:10px 24px;" onclick="ragIngest()">⚡ Index Now</button>
-      </div>`;
+function renderLocalFileList(files) {
+  const el = document.getElementById("local-file-list");
+  if (!el) return;
+  if (!files || !files.length) {
+    el.innerHTML = `<p style="font-size:.82rem;color:var(--text-dim);text-align:center;padding:12px 0;">No local files uploaded yet.</p>`;
     return;
   }
-
-  localEl.innerHTML = `
-    <div class="tree-node" style="font-weight:600;">
-      <input type="checkbox" checked style="accent-color:var(--local);">
-      <span>💻</span>
-      <span class="name">Local Documents</span>
-      <span class="meta" style="color:var(--local);">${count} chunks indexed</span>
-    </div>
-    <div style="padding-left:24px;">
-      <div class="tree-node">
-        <input type="checkbox" checked style="accent-color:var(--local);">
-        <span>📦</span>
-        <span class="name">ChromaDB Vector Store</span>
-        <span class="meta" style="color:var(--local);">${count.toLocaleString()} embeddings</span>
+  el.innerHTML = files.map(f => `
+    <div class="local-file-item">
+      <span class="lf-icon">${localFileIcon(f.ext || "")}</span>
+      <div class="lf-info">
+        <div class="lf-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</div>
+        <div class="lf-meta">${formatSize(f.size || 0)} · ${f.chunks || 0} chunks · ${timeAgo(f.uploaded_at)}</div>
       </div>
-    </div>`;
+      <button class="lf-del" title="Delete" onclick="deleteLocalFile('${f.id}')">🗑</button>
+    </div>
+  `).join("");
 }
+
+async function loadLocalFiles() {
+  try {
+    const res = await fetch(`${API_BASE}/local/files`);
+    const data = await res.json();
+    renderLocalFileList(data.files || []);
+    return data.files || [];
+  } catch (_) {
+    renderLocalFileList([]);
+    return [];
+  }
+}
+
+window.deleteLocalFile = async function(fileId) {
+  if (!confirm("Remove this file and its indexed chunks?")) return;
+  try {
+    const res = await fetch(`${API_BASE}/local/delete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file_id: fileId }),
+    });
+    const data = await res.json();
+    if (data.error) { showToast(data.error, "error"); return; }
+    showToast("File removed", "info");
+    consoleLog(`[OK] Deleted: ${fileId.replace("local__", "")}`, "ok");
+    loadLocalFiles();
+  } catch (err) {
+    showToast("Delete failed: " + err.message, "error");
+  }
+};
+
+async function uploadLocalFiles(fileList) {
+  if (!fileList || !fileList.length) return;
+
+  const progressBar   = document.getElementById("local-upload-bar");
+  const progressWrap  = document.getElementById("local-upload-progress");
+  const progressLabel = document.getElementById("local-upload-label");
+
+  if (progressWrap) progressWrap.style.display = "";
+  if (progressBar)  progressBar.style.width = "10%";
+  if (progressLabel) progressLabel.textContent = `Uploading ${fileList.length} file(s)…`;
+
+  const formData = new FormData();
+  Array.from(fileList).forEach(f => formData.append("files", f));
+
+  consoleLog(`[INFO] Uploading ${fileList.length} file(s)…`, "info");
+
+  try {
+    if (progressBar) progressBar.style.width = "40%";
+    const res = await fetch(`${API_BASE}/local/upload`, { method: "POST", body: formData });
+    if (progressBar) progressBar.style.width = "80%";
+    const data = await res.json();
+
+    if (data.error) {
+      consoleLog(`[ERROR] ${data.error}`, "warn");
+      showToast(data.error, "error");
+      return;
+    }
+
+    (data.results || []).forEach(r => {
+      if (r.status === "indexed")  consoleLog(`[OK] ${r.name} — ${r.chunks} chunks`, "ok");
+      else if (r.status === "error")  consoleLog(`[WARN] ${r.name}: ${r.reason}`, "warn");
+      else consoleLog(`[INFO] ${r.name}: ${r.reason || r.status}`, "info");
+    });
+
+    const indexed = (data.results || []).filter(r => r.status === "indexed").length;
+    if (indexed) showToast(`${indexed} file(s) indexed successfully`, "success");
+
+    if (progressBar) progressBar.style.width = "100%";
+    if (progressLabel) progressLabel.textContent = `Done — ${indexed} file(s) indexed`;
+    await loadLocalFiles();
+  } catch (err) {
+    consoleLog(`[ERROR] Upload failed: ${err.message}`, "warn");
+    showToast("Upload failed: " + err.message, "error");
+  } finally {
+    setTimeout(() => {
+      if (progressWrap) progressWrap.style.display = "none";
+      if (progressBar)  progressBar.style.width = "0%";
+    }, 2000);
+  }
+}
+
+function initLocalDropZone() {
+  const zone  = document.getElementById("local-drop-zone");
+  const input = document.getElementById("local-file-input");
+  if (!zone || !input) return;
+
+  zone.addEventListener("click", () => input.click());
+  input.addEventListener("change", () => {
+    if (input.files.length) uploadLocalFiles(input.files);
+    input.value = "";
+  });
+
+  zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("drag-over"); });
+  zone.addEventListener("dragleave", ()  => zone.classList.remove("drag-over"));
+  zone.addEventListener("drop", e => {
+    e.preventDefault();
+    zone.classList.remove("drag-over");
+    if (e.dataTransfer.files.length) uploadLocalFiles(e.dataTransfer.files);
+  });
+}
+
+// Keep old renderLocalTree signature for the updateDriveModal call (now unused but safe)
+function renderLocalTree() {}
 
 function consoleLog(msg, type = "info") {
   const el = document.getElementById("sync-console");
@@ -615,17 +709,16 @@ async function updateDriveModal() {
     consoleLog(`[ERROR] ${e.message}`, "warn");
   }
 
-  // Load local/RAG status
+  // Load local files + ChromaDB status
+  loadLocalFiles();
+  initLocalDropZone();
   try {
     const ragRes = await fetch(`${API_BASE}/rag/status`);
     const ragData = await ragRes.json();
-    renderLocalTree(ragData);
     if (ragData.indexed) {
-      consoleLog(`[OK] ChromaDB: ${ragData.total_chunks} embeddings stored`, "ok");
+      consoleLog(`[OK] ChromaDB: ${ragData.total_chunks} total embeddings`, "ok");
     }
-  } catch (_) {
-    renderLocalTree(null);
-  }
+  } catch (_) {}
 
   // Search filtering
   const searchInput = document.getElementById("drive-search-input");
@@ -1624,7 +1717,7 @@ function initToolbar() {
         } else {
           btn.classList.add("local-active");
           document.getElementById("tree-cloud").style.display = "none";
-          document.getElementById("tree-local").style.display = "";
+          document.getElementById("tree-local").style.display = "flex";
         }
       });
     });
