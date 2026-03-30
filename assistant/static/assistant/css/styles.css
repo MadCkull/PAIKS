@@ -1532,55 +1532,83 @@ a { color: inherit; text-decoration: none; }
 .hidden { display: none !important; }
 
 /* =====================================================================
-   FOLDER PICKER MODAL
+   OVERLAY & MODAL BASE
+   ===================================================================== */
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.3s, visibility 0.3s;
+}
+.overlay.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+
+.modal {
+  width: 90%;
+  background: var(--bg-deep);
+  border: 1px solid var(--glass-border-light);
+  border-radius: 20px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+  transform: scale(1);
+  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.modal-md { max-width: 560px; }
+.modal-fullscreen { width: 95vw; height: 90vh; max-width: 1400px; }
+.overlay.hidden .modal { transform: scale(0.95); }
+
+.modal-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--glass-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+}
+.modal-header h3 { font-size: 1.2rem; font-weight: 600; color: var(--text-primary); }
+
+.btn-close {
+  color: var(--text-dim);
+  font-size: 1.2rem;
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  transition: color 0.2s, background 0.2s;
+}
+.btn-close:hover { color: var(--text-primary); background: var(--glass-bg-hover); }
+
+.modal-body { padding: 24px; flex: 1; overflow-y: auto; }
+
+.divider { border: 0; border-top: 1px solid var(--glass-border); margin: 24px 0; }
+
+/* =====================================================================
+   FOLDER PICKER MODAL (legacy — kept for existing pages)
    ===================================================================== */
 #folder-picker-modal {
   position: fixed; inset: 0; z-index: 1000;
   display: flex; align-items: center; justify-content: center;
 }
-.modal-backdrop {
-  position: absolute; inset: 0; background: var(--bg-overlay);
-  backdrop-filter: blur(6px);
-}
-.modal-box {
-  position: relative; z-index: 1001;
-  background: var(--bg-card); border: 1px solid var(--border-dim);
-  border-radius: var(--radius-xl); width: 100%; max-width: 520px;
-  max-height: 80vh; display: flex; flex-direction: column;
-  box-shadow: var(--shadow-xl); margin: 16px;
-}
-.modal-header {
-  display: flex; align-items: flex-start; justify-content: space-between;
-  gap: 12px; padding: 24px 24px 16px;
-  border-bottom: 1px solid var(--border-dim);
-}
-.modal-title { font-size: 1.1rem; font-weight: 700; color: var(--text); }
-.modal-subtitle { font-size: .82rem; color: var(--text-muted); margin-top: 4px; }
-.modal-close {
-  background: transparent; border: 1px solid var(--border-dim);
-  border-radius: 8px; color: var(--text-muted);
-  cursor: pointer; padding: 5px 10px; font-size: .85rem;
-  line-height: 1; transition: all .15s; flex-shrink: 0;
-}
-.modal-close:hover { border-color: var(--red); color: var(--red); }
-.modal-search-row { padding: 14px 24px 12px; border-bottom: 1px solid var(--border-dim); }
-.folder-list {
-  overflow-y: auto; flex: 1; padding: 12px 14px;
-  display: flex; flex-direction: column; gap: 4px;
-}
-.folder-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 11px 14px; border-radius: var(--radius-sm);
-  background: transparent; border: 1px solid transparent;
-  cursor: pointer; text-align: left; color: var(--text);
-  font-size: .88rem; transition: all .15s; width: 100%;
-}
-.folder-item:hover { background: var(--accent-bg); border-color: rgba(108,92,231,.15); }
-.folder-item-active { background: var(--accent-bg) !important; border-color: rgba(108,92,231,.3) !important; }
+.modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.4); backdrop-filter: blur(8px); }
+.modal-box { position: relative; z-index: 1001; background: var(--bg-deep); border: 1px solid var(--glass-border-light); border-radius: 20px; width: 100%; max-width: 520px; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 24px 64px rgba(0,0,0,.5); margin: 16px; }
+.modal-title { font-size: 1.1rem; font-weight: 700; color: var(--text-primary); }
+.modal-subtitle { font-size: .82rem; color: var(--text-dim); margin-top: 4px; }
+.modal-close-legacy { background: transparent; border: 1px solid var(--glass-border); border-radius: 8px; color: var(--text-dim); cursor: pointer; padding: 5px 10px; font-size: .85rem; line-height: 1; transition: all .15s; flex-shrink: 0; }
+.modal-close-legacy:hover { border-color: var(--color-error); color: var(--color-error); }
+.modal-search-row { padding: 14px 24px 12px; border-bottom: 1px solid var(--glass-border); }
+.folder-list { overflow-y: auto; flex: 1; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.folder-item { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-radius: 10px; background: transparent; border: 1px solid transparent; cursor: pointer; text-align: left; color: var(--text-primary); font-size: .88rem; transition: all .15s; width: 100%; }
+.folder-item:hover { background: var(--accent-bg); border-color: var(--accent-glow); }
+.folder-item-active { background: var(--accent-bg) !important; border-color: var(--accent-glow) !important; }
 .folder-item-icon { font-size: 1.1rem; flex-shrink: 0; }
 .folder-item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .folder-item-arrow { color: var(--text-dim); font-size: .85rem; flex-shrink: 0; }
-.modal-footer {
-  padding: 14px 24px; border-top: 1px solid var(--border-dim);
-  display: flex; justify-content: flex-end;
-}
+.modal-footer { padding: 14px 24px; border-top: 1px solid var(--glass-border); display: flex; justify-content: flex-end; }
