@@ -103,32 +103,22 @@
 
       </div><!-- /.sidebar-content -->
 
-      <!-- Footer: Clerk user + Drive status -->
+      <!-- Footer: user avatar + name -->
       <div class="sidebar-footer" id="clerk-user-section">
-        <div class="footer-btn">
-          <div id="clerk-user-button" class="clerk-user-button-mount"></div>
-          <div class="sidebar-user-text">
-            <span id="sidebar-user-name" class="sidebar-user-name"></span>
-            <span id="sidebar-user-sub" class="sidebar-user-sub" hidden></span>
+        <div class="footer-btn" style="cursor:default;">
+          <div id="sidebar-avatar"
+            style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#a855f7);display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:700;flex-shrink:0;letter-spacing:0.5px;">
+            ?
           </div>
+          <span id="sidebar-user-name" class="sidebar-user-name">Loading…</span>
         </div>
-        <div class="drive-link-status" id="drive-link-status">
-          <span class="connection-dot disconnected" id="sidebar-connection-dot" aria-hidden="true"></span>
-          <div class="drive-link-copy">
-            <span class="drive-link-title" id="drive-link-title">Google Drive</span>
-            <span id="connection-label" class="drive-link-label">Not linked</span>
-          </div>
-          <span class="profile-badge profile-badge--drive" id="drive-profile-badge" hidden>Linked</span>
-        </div>
-        <!-- Theme toggle -->
-        <div class="theme-toggle-bar">
-          <button type="button" class="theme-toggle-btn" data-theme="light" onclick="setTheme('light')">
-            ☀️ <span class="theme-toggle-label">Light</span>
-          </button>
-          <button type="button" class="theme-toggle-btn active" data-theme="dark" onclick="setTheme('dark')">
-            🌙 <span class="theme-toggle-label">Dark</span>
-          </button>
-        </div>
+        <!-- Hidden elements kept for JS compatibility -->
+        <span id="sidebar-connection-dot" hidden></span>
+        <span id="connection-label" hidden></span>
+        <span id="drive-profile-badge" hidden></span>
+        <span id="drive-link-title" hidden></span>
+        <span id="sidebar-user-sub" hidden></span>
+        <div id="clerk-user-button" hidden></div>
       </div>
 
     </aside><!-- /.sidebar -->

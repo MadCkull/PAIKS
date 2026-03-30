@@ -51,45 +51,38 @@ async function checkAuthStatus() {
   return !!data.authenticated;
 }
 
-/** Sidebar: show Clerk name/email, or Drive user when Clerk is off. */
+/** Extract up to 2 initials from a display name or email. */
+function getInitials(name) {
+  if (!name) return "?";
+  const clean = name.trim();
+  // If it looks like an email, use first letter before @
+  if (clean.includes("@")) return clean[0].toUpperCase();
+  const parts = clean.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  return clean.slice(0, 2).toUpperCase();
+}
+
+/** Sidebar: show user avatar initials + name. */
 function syncSidebarIdentity(connected, user) {
-  const nameEl = document.getElementById("sidebar-user-name");
-  const subEl = document.getElementById("sidebar-user-sub");
-  if (!nameEl) return;
+  const nameEl   = document.getElementById("sidebar-user-name");
+  const avatarEl = document.getElementById("sidebar-avatar");
+
+  let displayName = "Guest";
 
   if (typeof window.Clerk !== "undefined" && window.Clerk.user) {
     const u = window.Clerk.user;
-    const primary =
+    displayName =
       u.fullName ||
       [u.firstName, u.lastName].filter(Boolean).join(" ").trim() ||
       u.primaryEmailAddress?.emailAddress ||
       u.username ||
       "Signed in";
-    nameEl.textContent = primary;
-    const em = u.primaryEmailAddress?.emailAddress;
-    if (subEl) {
-      if (em && em !== primary) {
-        subEl.textContent = em;
-        subEl.hidden = false;
-      } else {
-        subEl.textContent = "";
-        subEl.hidden = true;
-      }
-    }
-    return;
+  } else if (connected && user) {
+    displayName = (user.display_name || user.email || "Guest").trim();
   }
 
-  const dn = (user && (user.display_name || user.email || "").trim()) || "";
-  nameEl.textContent = connected && dn ? dn : "Guest";
-  if (subEl) {
-    if (connected && user?.email && user?.display_name && user.email !== user.display_name) {
-      subEl.textContent = user.email;
-      subEl.hidden = false;
-    } else {
-      subEl.textContent = "";
-      subEl.hidden = true;
-    }
-  }
+  if (nameEl) nameEl.textContent = displayName;
+  if (avatarEl) avatarEl.textContent = getInitials(displayName);
 }
 
 async function updateConnectionUI() {
