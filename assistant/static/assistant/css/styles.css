@@ -415,12 +415,12 @@ a { color: inherit; text-decoration: none; }
 
 /* Legacy .main kept for non-chat pages */
 .main {
-  margin-left: 260px; flex: 1;
+  flex: 1;
   padding: 32px 40px;
   display: flex; flex-direction: column; gap: 28px;
   min-height: 100vh;
   max-width: 100%;
-  transition: margin-left .28s cubic-bezier(.4,0,.2,1);
+  overflow-y: auto;
 }
 
 .main-header {
