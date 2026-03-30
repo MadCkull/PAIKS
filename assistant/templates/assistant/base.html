@@ -63,18 +63,9 @@
         <nav>
           <ul class="nav-list">
             <li>
-              <a class="nav-link {% block nav_home %}{% endblock %}" href="{% url 'home' %}">
-                <span class="nav-icon">🏠</span><span class="nav-label">Home</span>
-              </a>
-            </li>
-            <li>
-              <a class="nav-link {% block nav_dashboard %}{% endblock %}" href="{% url 'dashboard' %}">
-                <span class="nav-icon">📊</span><span class="nav-label">Dashboard</span>
-              </a>
-            </li>
-            <li>
               <a class="nav-link {% block nav_files %}{% endblock %}" href="{% url 'drive_files' %}">
-                <span class="nav-icon">🧠</span><span class="nav-label">AI Assistant</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                <span class="nav-label">AI Assistant</span>
               </a>
             </li>
           </ul>

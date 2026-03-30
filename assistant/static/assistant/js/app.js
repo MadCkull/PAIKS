@@ -303,6 +303,61 @@ async function loadDashboardStats() {
 }
 
 // ---------------------------------------------------------------------------
+// Dashboard modal stats (new UI)
+// ---------------------------------------------------------------------------
+async function updateDashboardStats() {
+  try {
+    const res = await fetch(`${API_BASE}/drive/stats`);
+    const data = await res.json();
+    const total = data.documents_total || 0;
+    const el = document.getElementById("stat-total");
+    if (el) el.textContent = total;
+    const cloudEl = document.getElementById("stat-cloud");
+    if (cloudEl) cloudEl.textContent = data.cloud_total || total;
+    const localEl = document.getElementById("stat-local");
+    if (localEl) localEl.textContent = data.local_total || 0;
+    const syncEl = document.getElementById("stat-sync");
+    if (syncEl) syncEl.textContent = data.synced_at && data.synced_at !== "Not synced yet"
+      ? formatDate(data.synced_at) : "Never";
+    const driveEl = document.getElementById("stat-drive");
+    const connected = await checkAuthStatus();
+    if (driveEl) driveEl.textContent = connected ? "✓ Connected" : "Not connected";
+    if (driveEl) driveEl.style.color = connected ? "var(--color-success)" : "var(--color-error)";
+  } catch (_) {}
+
+  // LLM status
+  try {
+    const res = await fetch(`${API_BASE}/rag/status`);
+    const data = await res.json();
+    const llmEl = document.getElementById("stat-llm");
+    const llmModel = document.getElementById("stat-llm-model");
+    if (llmEl) {
+      llmEl.textContent = data.llm_ok ? "✓ Online" : "✗ Offline";
+      llmEl.style.color = data.llm_ok ? "var(--color-success)" : "var(--color-error)";
+    }
+    if (llmModel) llmModel.textContent = data.model || "";
+  } catch (_) {}
+}
+
+// Also update toolbar context with file counts
+async function updateToolbarContext() {
+  try {
+    const res = await fetch(`${API_BASE}/drive/stats`);
+    const data = await res.json();
+    const cloud = data.cloud_total || data.documents_total || 0;
+    const local = data.local_total || 0;
+    const ctx = document.getElementById("toolbar-context");
+    if (!ctx) return;
+    const cloudEl = ctx.querySelector(".cloud-count");
+    const localEl = ctx.querySelector(".local-count");
+    const sep = ctx.querySelector(".sep");
+    if (cloudEl) cloudEl.textContent = cloud;
+    if (localEl) localEl.textContent = local;
+    if (sep) sep.style.display = (cloud > 0 && local > 0) ? "" : "none";
+  } catch (_) {}
+}
+
+// ---------------------------------------------------------------------------
 // File Browser
 // ---------------------------------------------------------------------------
 async function loadFiles(query = "") {
@@ -1027,54 +1082,231 @@ const SIDEBAR_COLLAPSED_KEY = "paiks-sidebar-collapsed";
 
 function initSidebarCollapse() {
   const btn = document.getElementById("sidebar-collapse-toggle");
-  if (!btn) return;
+  const sidebar = document.getElementById("app-sidebar");
+  if (!btn || !sidebar) return;
 
-  const mq = window.matchMedia("(min-width: 769px)");
+  const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+  if (saved) sidebar.classList.add("collapsed");
 
-  function isCollapsed() {
-    return document.body.classList.contains("sidebar-collapsed");
-  }
-
-  function apply(collapsed) {
-    const narrow = mq.matches && collapsed;
-    document.body.classList.toggle("sidebar-collapsed", narrow);
-    btn.setAttribute("aria-expanded", narrow ? "false" : "true");
-    btn.setAttribute("aria-label", narrow ? "Expand sidebar" : "Collapse sidebar");
-    btn.title = narrow ? "Expand sidebar" : "Collapse sidebar";
-    if (mq.matches) {
-      try {
-        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0");
-      } catch (_) { /* ignore */ }
-    }
-  }
-
-  function readSaved() {
+  btn.addEventListener("click", () => {
+    sidebar.classList.toggle("collapsed");
     try {
-      return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
-    } catch (_) {
-      return false;
-    }
-  }
-
-  if (mq.matches && readSaved()) {
-    apply(true);
-  } else {
-    apply(false);
-  }
-
-  btn.addEventListener("click", () => apply(!isCollapsed()));
-
-  mq.addEventListener("change", () => {
-    if (!mq.matches) {
-      document.body.classList.remove("sidebar-collapsed");
-      btn.setAttribute("aria-expanded", "true");
-      btn.setAttribute("aria-label", "Collapse sidebar");
-      btn.title = "Collapse sidebar";
-    } else {
-      apply(readSaved());
-    }
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, sidebar.classList.contains("collapsed") ? "1" : "0");
+    } catch (_) {}
   });
 }
+
+// ---------------------------------------------------------------------------
+// Modal helpers
+// ---------------------------------------------------------------------------
+window.openModal = function(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.remove("hidden");
+};
+window.closeModal = function(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.add("hidden");
+};
+
+// ---------------------------------------------------------------------------
+// Toolbar — hover expand + click actions
+// ---------------------------------------------------------------------------
+function initToolbar() {
+  const toolbar = document.getElementById("toolbarComponent");
+  if (!toolbar) return;
+
+  const tabBtns = toolbar.querySelectorAll(".tab-btn");
+
+  // Hover: expand label of hovered button, collapse others
+  tabBtns.forEach(btn => {
+    btn.addEventListener("mouseenter", () => {
+      tabBtns.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+    });
+  });
+  toolbar.addEventListener("mouseleave", () => {
+    tabBtns.forEach(b => b.classList.remove("active"));
+  });
+
+  // Click actions
+  tabBtns.forEach(btn => {
+    btn.addEventListener("click", () => {
+      const action = btn.dataset.action;
+      if (action === "settings")   openModal("settings-overlay");
+      if (action === "drive")      openModal("drive-overlay");
+      if (action === "dashboard")  openModal("dashboard-overlay");
+      if (action === "theme")      toggleTheme();
+    });
+  });
+
+  // Close overlays when clicking backdrop
+  document.querySelectorAll(".overlay").forEach(ov => {
+    ov.addEventListener("click", e => {
+      if (e.target === ov) ov.classList.add("hidden");
+    });
+  });
+
+  // Drive tabs (cloud / local)
+  const driveTabs = document.getElementById("drive-tabs");
+  if (driveTabs) {
+    driveTabs.querySelectorAll(".pill-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        driveTabs.querySelectorAll(".pill-btn").forEach(b =>
+          b.classList.remove("active", "cloud-active", "local-active"));
+        btn.classList.add("active");
+        if (btn.dataset.tab === "cloud") {
+          btn.classList.add("cloud-active");
+          document.getElementById("tree-cloud").style.display = "";
+          document.getElementById("tree-local").style.display = "none";
+        } else {
+          btn.classList.add("local-active");
+          document.getElementById("tree-cloud").style.display = "none";
+          document.getElementById("tree-local").style.display = "";
+        }
+      });
+    });
+  }
+
+  // Dashboard filter tabs
+  const dashFilter = document.getElementById("dash-filter");
+  if (dashFilter) {
+    dashFilter.querySelectorAll(".pill-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        dashFilter.querySelectorAll(".pill-btn").forEach(b =>
+          b.classList.remove("active", "cloud-active", "local-active"));
+        btn.classList.add("active");
+        if (btn.dataset.filter === "cloud") btn.classList.add("cloud-active");
+        if (btn.dataset.filter === "local") btn.classList.add("local-active");
+      });
+    });
+  }
+
+  // Workspace switching
+  document.querySelectorAll(".workspace-item").forEach(ws => {
+    ws.addEventListener("click", () => {
+      document.querySelectorAll(".workspace-item").forEach(w => w.classList.remove("active"));
+      ws.classList.add("active");
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Theme toggle (toolbar button)
+// ---------------------------------------------------------------------------
+let _isDark = (localStorage.getItem("paiks-theme") || "dark") === "dark";
+
+function toggleTheme() {
+  _isDark = !_isDark;
+  const theme = _isDark ? "dark" : "light";
+  document.documentElement.setAttribute("data-theme", theme);
+  localStorage.setItem("paiks-theme", theme);
+
+  const icon = document.getElementById("theme-icon");
+  const label = document.getElementById("theme-label");
+  if (icon) {
+    icon.innerHTML = _isDark
+      ? '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>'
+      : '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
+  }
+  if (label) label.textContent = _isDark ? "Light Mode" : "Dark Mode";
+
+  // Sync legacy theme toggle buttons
+  document.querySelectorAll(".theme-toggle-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.getAttribute("data-theme") === theme);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// New chat input (files page — #chat-input textarea)
+// ---------------------------------------------------------------------------
+function initNewChatInput() {
+  const chatInput = document.getElementById("chat-input");
+  const btnSend   = document.getElementById("btn-send");
+  const emptyState  = document.getElementById("empty-state");
+  const chatMessages = document.getElementById("chat-messages");
+  const chatThread   = document.getElementById("chat-thread");
+  if (!chatInput || !btnSend) return;
+
+  chatInput.addEventListener("input", () => {
+    chatInput.style.height = "auto";
+    chatInput.style.height = Math.min(chatInput.scrollHeight, 200) + "px";
+    btnSend.disabled = chatInput.value.trim().length === 0;
+  });
+
+  chatInput.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleNewSend();
+    }
+  });
+  btnSend.addEventListener("click", handleNewSend);
+
+  function handleNewSend() {
+    const text = chatInput.value.trim();
+    if (!text) return;
+    if (emptyState && !emptyState.classList.contains("hidden")) {
+      emptyState.classList.add("hidden");
+    }
+
+    // Append user message
+    const userDiv = document.createElement("div");
+    userDiv.className = "message user";
+    userDiv.innerHTML = `<div class="message-avatar">U</div><div class="message-content">${escapeHtml(text)}</div>`;
+    chatMessages.appendChild(userDiv);
+
+    chatInput.value = "";
+    chatInput.style.height = "auto";
+    btnSend.disabled = true;
+    chatThread.scrollTop = chatThread.scrollHeight;
+
+    // Typing indicator
+    const typingId = "typing-" + Date.now();
+    const typingDiv = document.createElement("div");
+    typingDiv.id = typingId;
+    typingDiv.className = "message ai";
+    typingDiv.innerHTML = `<div class="message-avatar">✨</div><div class="message-content"><div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div>`;
+    chatMessages.appendChild(typingDiv);
+    chatThread.scrollTop = chatThread.scrollHeight;
+
+    // Fire actual RAG call then replace typing indicator
+    (async () => {
+      try {
+        const res = await fetchWithTimeout(`${API_BASE}/rag/search`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: text, top_k: 5 }),
+        }, 300000);
+        const data = await res.json();
+        const el = document.getElementById(typingId);
+        if (el) el.remove();
+
+        const aiDiv = document.createElement("div");
+        aiDiv.className = "message ai";
+        const answer = data.answer || data.error || "No response.";
+        aiDiv.innerHTML = `<div class="message-avatar">✨</div><div class="message-content"><p>${escapeHtml(answer)}</p></div>`;
+        chatMessages.appendChild(aiDiv);
+        chatThread.scrollTop = chatThread.scrollHeight;
+      } catch (err) {
+        const el = document.getElementById(typingId);
+        if (el) el.remove();
+        const errDiv = document.createElement("div");
+        errDiv.className = "message ai";
+        errDiv.innerHTML = `<div class="message-avatar">✨</div><div class="message-content"><p style="color:var(--color-error)">Error: ${escapeHtml(err.message)}</p></div>`;
+        chatMessages.appendChild(errDiv);
+        chatThread.scrollTop = chatThread.scrollHeight;
+      }
+    })();
+  }
+}
+
+// Suggestion card helper
+window.setInput = function(val) {
+  const chatInput = document.getElementById("chat-input");
+  if (!chatInput) return;
+  chatInput.value = val;
+  chatInput.dispatchEvent(new Event("input"));
+  chatInput.focus();
+};
 
 // ---------------------------------------------------------------------------
 // Init on page load
@@ -1082,6 +1314,8 @@ function initSidebarCollapse() {
 document.addEventListener("DOMContentLoaded", async () => {
   initMobileToggle();
   initSidebarCollapse();
+  initToolbar();
+  initNewChatInput();
 
   // Clerk auth guard — blocks until verified
   const authed = await initClerkAuth();
@@ -1096,6 +1330,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     loadDashboardStats();
     loadFolderBadge();
   }
+  if (document.getElementById("chat-thread")) {
+    loadRagStatus();
+    loadLLMStatus();
+    updateDashboardStats();
+    updateToolbarContext();
+  }
+
   if (document.getElementById("files-container")) {
     loadFiles();
     loadRagStatus();
