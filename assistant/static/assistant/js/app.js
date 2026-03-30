@@ -403,6 +403,75 @@ async function updateDashboardStats() {
   } catch (_) {}
 }
 
+// ---------------------------------------------------------------------------
+// Settings modal — populate with real data
+// ---------------------------------------------------------------------------
+async function updateSettingsModal() {
+  // 1. Drive connection status
+  try {
+    const [authRes, statsRes] = await Promise.all([
+      fetch(`${API_BASE}/auth/status`),
+      fetch(`${API_BASE}/drive/stats`),
+    ]);
+    const auth  = await authRes.json();
+    const stats = await statsRes.json();
+    const connected = !!auth.authenticated;
+
+    const folderEl  = document.getElementById("settings-drive-folder");
+    const statusEl  = document.getElementById("settings-drive-status");
+    const connectBtn    = document.getElementById("btn-connect-settings") || document.querySelector("#settings-overlay .btn-sm[onclick='connectDrive()']");
+    const disconnectBtn = document.getElementById("btn-disconnect-settings");
+
+    if (folderEl) {
+      const folder = stats.folder?.name || stats.folder || null;
+      folderEl.textContent = connected
+        ? (folder ? `📁 ${folder}` : "Connected") + (stats.documents_total ? ` · ${stats.documents_total} files` : "")
+        : "Not connected";
+    }
+    if (statusEl) {
+      statusEl.textContent = connected ? `✓ Connected · ${stats.documents_total || 0} files indexed` : "Not connected";
+      statusEl.style.color = connected ? "var(--color-success)" : "var(--text-dim)";
+    }
+    if (connectBtn)    connectBtn.style.display    = connected ? "none"  : "";
+    if (disconnectBtn) disconnectBtn.style.display = connected ? ""      : "none";
+  } catch (_) {}
+
+  // 2. LLM status — populate model dropdown + restore saved config
+  try {
+    const res  = await fetch(`${API_BASE}/rag/llm/status`);
+    const data = await res.json();
+
+    const urlInput      = document.getElementById("llm-url-input");
+    const providerSelect = document.getElementById("llm-provider-select");
+    const modelSelect   = document.getElementById("llm-model-select");
+    const modelInput    = document.getElementById("llm-model-input");
+
+    if (urlInput && data.base_url)    urlInput.value       = data.base_url;
+    if (providerSelect && data.provider) providerSelect.value = data.provider;
+
+    if (data.reachable && data.available_models?.length) {
+      // Show dropdown, hide manual input
+      if (modelSelect) {
+        modelSelect.innerHTML = data.available_models
+          .map(m => `<option value="${m}"${m === data.current_model ? " selected" : ""}>${m}</option>`)
+          .join("");
+        modelSelect.style.display = "";
+      }
+      if (modelInput) modelInput.style.display = "none";
+    } else {
+      // LLM not reachable — show manual text input with saved model
+      if (modelSelect) modelSelect.style.display = "none";
+      if (modelInput) {
+        modelInput.style.display = "";
+        modelInput.value = data.current_model || "";
+        modelInput.placeholder = data.reachable ? "type model name" : "LLM not reachable — type model name";
+      }
+    }
+
+    if (typeof onProviderChange === "function") onProviderChange();
+  } catch (_) {}
+}
+
 // Also update toolbar context with file counts
 async function updateToolbarContext() {
   try {
@@ -1196,7 +1265,7 @@ function initToolbar() {
   tabBtns.forEach(btn => {
     btn.addEventListener("click", () => {
       const action = btn.dataset.action;
-      if (action === "settings")  { openModal("settings-overlay"); }
+      if (action === "settings")  { openModal("settings-overlay");  updateSettingsModal(); }
       if (action === "drive")     { openModal("drive-overlay"); }
       if (action === "dashboard") { openModal("dashboard-overlay"); updateDashboardStats(); }
       if (action === "theme")     { toggleTheme(); }
@@ -1399,6 +1468,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     loadLLMStatus();
     updateDashboardStats();
     updateToolbarContext();
+    updateSettingsModal();
   }
 
   if (document.getElementById("files-container")) {
