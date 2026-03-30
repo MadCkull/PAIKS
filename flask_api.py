@@ -24,6 +24,11 @@ SYNC_CACHE_PATH = BASE_DIR / "drive_cache.json"
 FOLDER_CONFIG_PATH = BASE_DIR / "folder_config.json"
 CHROMA_PATH = BASE_DIR / "chroma_db"
 LLM_CONFIG_PATH = BASE_DIR / "llm_config.json"
+LOCAL_FILES_PATH = BASE_DIR / "local_files"
+LOCAL_FILES_PATH.mkdir(exist_ok=True)
+
+LOCAL_ALLOWED_EXTENSIONS = {".txt", ".md", ".csv", ".docx", ".pdf"}
+LOCAL_FILES_CACHE = BASE_DIR / "local_files_cache.json"
 
 # Default: Ollama running locally
 _DEFAULT_LLM_CONFIG = {
@@ -1049,6 +1054,174 @@ def rag_llm_config():
     cfg = {"base_url": base_url, "model": model, "provider": provider}
     _save_llm_config(cfg)
     return jsonify({"status": "saved", **cfg})
+
+
+# ---------------------------------------------------------------------------
+# Local File helpers
+# ---------------------------------------------------------------------------
+
+def _local_files_meta():
+    """Return list of local file metadata dicts from cache."""
+    try:
+        if LOCAL_FILES_CACHE.exists():
+            return json.loads(LOCAL_FILES_CACHE.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return []
+
+def _local_files_meta_save(meta_list):
+    LOCAL_FILES_CACHE.write_text(json.dumps(meta_list, ensure_ascii=False, indent=2), encoding="utf-8")
+
+def _extract_text_from_local(filepath: pathlib.Path) -> str | None:
+    """Extract plain text from a local file by extension."""
+    ext = filepath.suffix.lower()
+    try:
+        if ext in (".txt", ".md", ".csv"):
+            return filepath.read_text(encoding="utf-8", errors="ignore")
+
+        if ext == ".docx":
+            import docx as docx_lib
+            doc = docx_lib.Document(str(filepath))
+            parts = [p.text for p in doc.paragraphs if p.text.strip()]
+            for table in doc.tables:
+                for row in table.rows:
+                    row_text = [c.text.strip() for c in row.cells if c.text.strip()]
+                    if row_text:
+                        parts.append(" | ".join(row_text))
+            return "\n".join(parts) if parts else None
+
+        if ext == ".pdf":
+            try:
+                import pdfplumber
+                with pdfplumber.open(str(filepath)) as pdf:
+                    pages = [p.extract_text() or "" for p in pdf.pages]
+                return "\n".join(pages).strip() or None
+            except ImportError:
+                pass
+            # Fallback: read raw bytes and decode printable text
+            raw = filepath.read_bytes()
+            text = raw.decode("latin-1", errors="ignore")
+            printable = "".join(c if c.isprintable() or c in "\n\r\t" else " " for c in text)
+            return printable.strip() or None
+
+    except Exception as exc:
+        app.logger.warning("local extract failed for %s: %s", filepath.name, exc)
+    return None
+
+
+@app.get("/local/files")
+def local_files_list():
+    """Return list of uploaded local files with metadata."""
+    return jsonify({"files": _local_files_meta()})
+
+
+@app.post("/local/upload")
+def local_upload():
+    """Accept one or more file uploads, extract text, chunk, and embed into ChromaDB."""
+    uploaded = request.files.getlist("files")
+    if not uploaded:
+        return jsonify({"error": "No files provided"}), 400
+
+    col = _get_collection()
+    meta_list = _local_files_meta()
+    results = []
+
+    for f in uploaded:
+        original_name = f.filename or "upload"
+        ext = pathlib.Path(original_name).suffix.lower()
+        if ext not in LOCAL_ALLOWED_EXTENSIONS:
+            results.append({"name": original_name, "status": "skipped", "reason": f"Unsupported type {ext}"})
+            continue
+
+        # Safe filename: strip path components
+        safe_name = pathlib.Path(original_name).name
+        dest = LOCAL_FILES_PATH / safe_name
+        # If duplicate name, append counter
+        counter = 1
+        while dest.exists():
+            stem = pathlib.Path(safe_name).stem
+            dest = LOCAL_FILES_PATH / f"{stem}_{counter}{ext}"
+            counter += 1
+
+        f.save(str(dest))
+        size = dest.stat().st_size
+
+        text = _extract_text_from_local(dest)
+        if not text or not text.strip():
+            dest.unlink(missing_ok=True)
+            results.append({"name": original_name, "status": "error", "reason": "Could not extract text"})
+            continue
+
+        chunks = _chunk_text(text)
+        if not chunks:
+            dest.unlink(missing_ok=True)
+            results.append({"name": original_name, "status": "error", "reason": "Text too short to chunk"})
+            continue
+
+        file_id = "local__" + dest.name
+        # Remove old chunks for this file if re-uploading
+        try:
+            existing = col.get(where={"source": "local", "file_name": dest.name})
+            if existing and existing.get("ids"):
+                col.delete(ids=existing["ids"])
+        except Exception:
+            pass
+
+        ids = [f"{file_id}__chunk__{i}" for i in range(len(chunks))]
+        metadatas = [
+            {"source": "local", "file_name": dest.name, "file_path": str(dest), "chunk_index": i}
+            for i in range(len(chunks))
+        ]
+        col.upsert(ids=ids, documents=chunks, metadatas=metadatas)
+
+        import time
+        file_meta = {
+            "id": file_id,
+            "name": dest.name,
+            "original_name": original_name,
+            "size": size,
+            "chunks": len(chunks),
+            "uploaded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "ext": ext,
+        }
+        # Update or append in meta list
+        meta_list = [m for m in meta_list if m.get("id") != file_id]
+        meta_list.append(file_meta)
+        results.append({"name": original_name, "status": "indexed", "chunks": len(chunks)})
+
+    _local_files_meta_save(meta_list)
+    return jsonify({"results": results, "total_files": len([r for r in results if r["status"] == "indexed"])})
+
+
+@app.post("/local/delete")
+def local_delete():
+    """Delete a local file and remove its ChromaDB chunks."""
+    body = request.get_json(silent=True) or {}
+    file_id = body.get("file_id", "")
+    if not file_id or not file_id.startswith("local__"):
+        return jsonify({"error": "Invalid file_id"}), 400
+
+    file_name = file_id.replace("local__", "", 1)
+    dest = LOCAL_FILES_PATH / file_name
+
+    # Remove from ChromaDB
+    try:
+        col = _get_collection()
+        existing = col.get(where={"source": "local", "file_name": file_name})
+        if existing and existing.get("ids"):
+            col.delete(ids=existing["ids"])
+    except Exception as exc:
+        app.logger.warning("ChromaDB delete error for %s: %s", file_name, exc)
+
+    # Remove file from disk
+    if dest.exists():
+        dest.unlink()
+
+    # Remove from meta cache
+    meta_list = [m for m in _local_files_meta() if m.get("id") != file_id]
+    _local_files_meta_save(meta_list)
+
+    return jsonify({"status": "deleted", "file_id": file_id})
 
 
 def _prewarm_chroma():
