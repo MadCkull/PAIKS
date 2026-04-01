@@ -15,7 +15,26 @@ from googleapiclient.discovery import build
 
 app = Flask(__name__)
 app.secret_key = "paiks-dev-secret-key-change-in-prod"
-CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True, allow_headers=["Content-Type", "Authorization"], methods=["GET", "POST", "OPTIONS"])
+CORS(app, resources={r"/*": {"origins": "*"}}, allow_headers=["Content-Type", "Authorization"], methods=["GET", "POST", "OPTIONS"])
+
+@app.after_request
+def _add_cors(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    return response
+
+@app.errorhandler(Exception)
+def _handle_exception(e):
+    import traceback
+    app.logger.error("Unhandled exception: %s", traceback.format_exc())
+    from flask import jsonify
+    response = jsonify({"error": str(e)})
+    response.status_code = 500
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    return response
 
 BASE_DIR = pathlib.Path(__file__).resolve().parent
 TOKEN_PATH = BASE_DIR / "token.json"
@@ -888,15 +907,15 @@ def rag_search():
                 raw["metadatas"][0],
                 raw["distances"][0],
             ):
-                fid = meta["file_id"]
+                fid = meta.get("file_id") or meta.get("file_name", "unknown")
                 score = round(1.0 - float(dist), 3)
                 if fid not in seen or score > seen[fid]["score"]:
                     seen[fid] = {
                         "id": fid,
-                        "name": meta["file_name"],
-                        "mimeType": meta["mime_type"],
-                        "webViewLink": meta["web_view_link"],
-                        "modifiedTime": meta["modified_time"],
+                        "name": meta.get("file_name", "Unknown"),
+                        "mimeType": meta.get("mime_type", ""),
+                        "webViewLink": meta.get("web_view_link", ""),
+                        "modifiedTime": meta.get("modified_time", ""),
                         "snippet": doc[:320].strip(),
                         "score": score,
                         "relevance_hint": f"Semantic match · {round(score * 100)}% relevance",
@@ -930,7 +949,19 @@ def rag_search():
                 "folder": folder_cfg,
             })
     except Exception as exc:
-        app.logger.warning("Semantic search error, falling back to keyword: %s", exc)
+        import traceback
+        app.logger.error("Semantic search error: %s\n%s", exc, traceback.format_exc())
+        return jsonify({
+            "query": query,
+            "answer": None,
+            "answer_error": f"Semantic search failed: {exc}",
+            "answer_model": None,
+            "results": [],
+            "total": 0,
+            "source": "error",
+            "indexed": True,
+            "folder": folder_cfg,
+        })
 
     # ── Keyword fallback (index empty or unavailable) ───────────────────────
     creds = _get_creds()
@@ -964,7 +995,7 @@ def rag_search():
             (sum(1 for w in words if w in f.get("name", "").lower()), f)
             for f in cache.get("files", [])
         ]
-        files = [f for score, f in sorted(scored, reverse=True) if score > 0][:10]
+        files = [f for score, f in sorted(scored, key=lambda x: x[0], reverse=True) if score > 0][:10]
 
     words = [w.lower() for w in query.split() if w]
     hits = [

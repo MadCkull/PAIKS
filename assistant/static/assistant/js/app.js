@@ -1116,98 +1116,13 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
   }
-  // Dynamic Input Box Logic
+  // Auto-resize chat textarea
   const chatInput = document.getElementById("chat-input");
-  const modernInputBox = document.querySelector(".modern-input-box");
-  const chatThread = document.getElementById("chat-thread");
-  
-  if (chatInput && modernInputBox) {
-    let isFocused = false;
-    let isHovered = false;
-
-    const updateExpandedState = () => {
-      if (isFocused || isHovered) {
-        modernInputBox.classList.add("is-expanded");
-        resizeTextarea();
-      } else {
-        // Prevent collapsing if model selector dropdown is actively open
-        const chatModelBtn = document.getElementById("chat-model-btn");
-        if (chatModelBtn && chatModelBtn.getAttribute("aria-expanded") === "true") {
-           return; 
-        }
-        modernInputBox.classList.remove("is-expanded");
-      }
-    };
-
-    const resizeTextarea = () => {
-      chatInput.style.setProperty("height", "24px", "important");
-      const newHeight = Math.min(chatInput.scrollHeight, 380);
-      chatInput.style.setProperty("height", newHeight + "px", "important");
-      modernInputBox.style.setProperty("--dynamic-height", newHeight + "px");
-    };
-
-    chatInput.addEventListener("input", resizeTextarea);
-    
-    // Precision hover logic
-    modernInputBox.addEventListener("mouseenter", () => { isHovered = true; updateExpandedState(); });
-    modernInputBox.addEventListener("mouseleave", () => { isHovered = false; updateExpandedState(); });
-    
-    // Precision focus logic capturing anything inside the box
-    modernInputBox.addEventListener("focusin", () => { isFocused = true; updateExpandedState(); });
-    modernInputBox.addEventListener("focusout", (e) => { 
-      if (!modernInputBox.contains(e.relatedTarget)) {
-        isFocused = false;
-        updateExpandedState();
-      }
+  if (chatInput) {
+    chatInput.addEventListener("input", () => {
+      chatInput.style.height = "auto";
+      chatInput.style.height = Math.min(chatInput.scrollHeight, 200) + "px";
     });
-
-    // Global click listener to forcefully collapse on interaction outside
-    document.addEventListener("mousedown", (e) => {
-      // If click is not inside modernInputBox, force collapse
-      if (!modernInputBox.contains(e.target)) {
-        isFocused = false;
-        isHovered = false; // Override visual hover if stuck
-        
-        // Also ensure dropdown closes
-        const chatModelMenu = document.getElementById("model-dropdown-menu");
-        const chatModelBtn = document.getElementById("chat-model-btn");
-        if (chatModelMenu) chatModelMenu.classList.add("hidden");
-        if (chatModelBtn) chatModelBtn.setAttribute("aria-expanded", "false");
-        
-        updateExpandedState();
-      }
-    });
-
-    // Smart collapse on chat activity
-    if (chatThread) {
-      const handleScrollBlur = () => {
-        isFocused = false; 
-        isHovered = false; 
-        chatInput.blur();
-        
-        const chatModelMenu = document.getElementById("model-dropdown-menu");
-        const chatModelBtn = document.getElementById("chat-model-btn");
-        if (chatModelMenu) chatModelMenu.classList.add("hidden");
-        if (chatModelBtn) chatModelBtn.setAttribute("aria-expanded", "false");
-        
-        updateExpandedState();
-      };
-      chatThread.addEventListener("wheel", handleScrollBlur, { passive: true });
-      chatThread.addEventListener("touchmove", handleScrollBlur, { passive: true });
-    }
-
-    // Collapse on send attempt
-    const btnSend = document.getElementById("btn-send");
-    if (btnSend) {
-      btnSend.addEventListener("click", () => {
-        setTimeout(() => {
-          isFocused = false;
-          isHovered = false;
-          chatInput.blur();
-          updateExpandedState();
-        }, 50);
-      });
-    }
   }
 });
 
@@ -2034,7 +1949,18 @@ function initNewChatInput() {
 
         const aiDiv = document.createElement("div");
         aiDiv.className = "message ai";
-        const answer = data.answer || data.error || "No response.";
+        let answer;
+        if (data.answer) {
+          answer = data.answer;
+        } else if (data.answer_error) {
+          answer = "LLM unavailable: " + data.answer_error + "\nMake sure Ollama is running.";
+        } else if (data.error) {
+          answer = data.error;
+        } else if (data.results && data.results.length > 0) {
+          answer = "Found " + data.results.length + " relevant document(s) but no LLM is available to generate an answer. Start Ollama to enable AI responses.";
+        } else {
+          answer = "No matching documents found. Make sure you have synced and indexed your files.";
+        }
         aiDiv.innerHTML = `<div class="message-avatar">✨</div><div class="message-content"><p>${escapeHtml(answer)}</p></div>`;
         chatMessages.appendChild(aiDiv);
         sessionAddMessage('ai', answer);
