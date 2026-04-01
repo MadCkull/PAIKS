@@ -1742,6 +1742,37 @@ function initToolbar() {
     ws.addEventListener("click", () => {
       document.querySelectorAll(".workspace-item").forEach(w => w.classList.remove("active"));
       ws.classList.add("active");
+
+      const wsType = ws.dataset.ws;
+      openModal("drive-overlay");
+      updateDriveModal();
+
+      const cloudPanel = document.getElementById("tree-cloud");
+      const localPanel = document.getElementById("tree-local");
+      const driveTabs  = document.getElementById("drive-tabs");
+
+      if (!cloudPanel || !localPanel) return;
+
+      if (driveTabs) {
+        driveTabs.querySelectorAll(".pill-btn").forEach(b =>
+          b.classList.remove("active", "cloud-active", "local-active"));
+      }
+
+      if (wsType === "drive") {
+        cloudPanel.style.display = "";
+        localPanel.style.display = "none";
+        const btn = driveTabs && driveTabs.querySelector('[data-tab="cloud"]');
+        if (btn) btn.classList.add("active", "cloud-active");
+      } else if (wsType === "local") {
+        cloudPanel.style.display = "none";
+        localPanel.style.display = "flex";
+        const btn = driveTabs && driveTabs.querySelector('[data-tab="local"]');
+        if (btn) btn.classList.add("active", "local-active");
+      } else {
+        // "all" — show both panels stacked
+        cloudPanel.style.display = "";
+        localPanel.style.display = "flex";
+      }
     });
   });
 }
