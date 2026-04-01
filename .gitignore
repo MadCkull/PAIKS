@@ -79,6 +79,8 @@ Desktop.ini
 # ==========================================
 drive_cache.json
 folder_config.json
+local_files_cache.json
+local_files/
 llm_config.json
 chroma_db/
 UIConcept/

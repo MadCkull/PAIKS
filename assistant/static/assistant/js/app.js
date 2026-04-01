@@ -965,12 +965,13 @@ function handleFeatureSearch() {
 // Local LLM – status, model picker, config
 // ---------------------------------------------------------------------------
 async function loadLLMStatus() {
-  const dot = document.getElementById("llm-status-dot");
-  const label = document.getElementById("llm-status-label");
-  const modelSelect = document.getElementById("llm-model-select");
+  const btn = document.getElementById("chat-model-btn");
+  const indicator = document.getElementById("chat-model-indicator");
+  const nameLabel = document.getElementById("chat-model-name");
+  const dropdownList = document.getElementById("model-dropdown-list");
+  
   const urlInput = document.getElementById("llm-url-input");
   const providerSelect = document.getElementById("llm-provider-select");
-  if (!dot) return;
 
   try {
     const res = await fetch(`${API_BASE}/rag/llm/status`);
@@ -981,31 +982,40 @@ async function loadLLMStatus() {
     if (providerSelect && data.provider) providerSelect.value = data.provider;
     onProviderChange();
 
+    window.current_llm_model = data.current_model || "";
+
+    if (!btn) return;
+
     if (data.reachable) {
-      dot.className = "connection-dot connected";
-      label.textContent = `Local LLM: ${data.current_model || "connected"}`;
+      indicator.className = "chat-model-indicator status-online";
+      nameLabel.textContent = data.current_model || "Connected";
+      btn.disabled = false;
 
       // Populate model dropdown
-      if (modelSelect && data.available_models?.length) {
-        modelSelect.innerHTML = data.available_models
-          .map(m => `<option value="${m}"${m === data.current_model ? " selected" : ""}>${m}</option>`)
+      if (dropdownList && data.available_models?.length) {
+        dropdownList.innerHTML = data.available_models
+          .map(m => `
+            <button class="model-dropdown-item ${m === data.current_model ? 'active' : ''}" onclick="selectChatModel('${m}')">
+              ${m}
+              ${m === data.current_model ? ' <span style="font-size: 1.1em;">✓</span>' : ''}
+            </button>
+          `)
           .join("");
-        modelSelect.style.display = "";
-        const manualInput = document.getElementById("llm-model-input");
-        if (manualInput) manualInput.style.display = "none";
+      } else if (dropdownList) {
+         dropdownList.innerHTML = '<div class="model-dropdown-empty">No models found</div>';
       }
     } else {
-      dot.className = "connection-dot disconnected";
-      label.textContent = "Local LLM: not running";
-      if (modelSelect) modelSelect.innerHTML = '<option value="">— not reachable —</option>';
-      // Show manual input so user can type a model name
-      const manualInput = document.getElementById("llm-model-input");
-      if (manualInput) { manualInput.style.display = ""; manualInput.value = data.current_model || ""; }
-      if (modelSelect) modelSelect.style.display = "none";
+      indicator.className = "chat-model-indicator status-offline";
+      nameLabel.textContent = "Offline";
+      btn.disabled = true;
+      if (dropdownList) {
+        dropdownList.innerHTML = '<div class="model-dropdown-empty">LLM not reachable</div>';
+      }
     }
   } catch {
-    if (dot) dot.className = "connection-dot disconnected";
-    if (label) label.textContent = "Local LLM: unavailable";
+    if (indicator) indicator.className = "chat-model-indicator status-offline";
+    if (nameLabel) nameLabel.textContent = "Unavailable";
+    if (btn) btn.disabled = true;
   }
 }
 
@@ -1024,17 +1034,13 @@ function onProviderChange() {
 async function saveLLMConfig() {
   const urlInput = document.getElementById("llm-url-input");
   const providerSelect = document.getElementById("llm-provider-select");
-  const modelSelect = document.getElementById("llm-model-select");
-  const modelInput = document.getElementById("llm-model-input");
 
   const base_url = urlInput?.value.trim();
   const provider = providerSelect?.value || "ollama";
-  const model = (modelSelect?.style.display !== "none" ? modelSelect?.value : "")
-    || modelInput?.value.trim()
-    || modelSelect?.value;
+  const model = window.current_llm_model || "llama3.2";
 
-  if (!base_url || !model) {
-    showToast("Set a URL and model name first.", "error");
+  if (!base_url) {
+    showToast("Set a URL first.", "error");
     return;
   }
 
@@ -1046,12 +1052,164 @@ async function saveLLMConfig() {
     });
     const data = await res.json();
     if (data.error) { showToast(data.error, "error"); return; }
-    showToast(`LLM set to ${model}`, "success");
+    showToast(`LLM configuration saved`, "success");
     await loadLLMStatus();
   } catch (err) {
     showToast("Failed to save LLM config: " + err.message, "error");
   }
 }
+
+// Global logic for selecting a model from the chat input dropdown
+async function selectChatModel(modelName) {
+  const urlInput = document.getElementById("llm-url-input");
+  const providerSelect = document.getElementById("llm-provider-select");
+  
+  const base_url = urlInput?.value.trim() || "http://localhost:11434";
+  const provider = providerSelect?.value || "ollama";
+  const model = modelName;
+
+  try {
+    const res = await fetch(`${API_BASE}/rag/llm/config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ base_url, model, provider }),
+    });
+    const data = await res.json();
+    if (data.error) { showToast(data.error, "error"); return; }
+    showToast(`Model set to ${model}`, "success");
+    
+    // Close dropdown
+    const menu = document.getElementById("model-dropdown-menu");
+    const btn = document.getElementById("chat-model-btn");
+    if (menu) menu.classList.add("hidden");
+    if (btn) btn.setAttribute("aria-expanded", "false");
+
+    await loadLLMStatus();
+  } catch (err) {
+    showToast("Failed to change model: " + err.message, "error");
+  }
+}
+
+// Dropdown toggle & outside click logic
+document.addEventListener("DOMContentLoaded", () => {
+  const chatModelBtn = document.getElementById("chat-model-btn");
+  const chatModelMenu = document.getElementById("model-dropdown-menu");
+  
+  if (chatModelBtn && chatModelMenu) {
+    chatModelBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (chatModelBtn.disabled) return;
+      const isExpanded = chatModelBtn.getAttribute("aria-expanded") === "true";
+      if (isExpanded) {
+        chatModelMenu.classList.add("hidden");
+        chatModelBtn.setAttribute("aria-expanded", "false");
+      } else {
+        chatModelMenu.classList.remove("hidden");
+        chatModelBtn.setAttribute("aria-expanded", "true");
+      }
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!chatModelBtn.contains(e.target) && !chatModelMenu.contains(e.target)) {
+        chatModelMenu.classList.add("hidden");
+        chatModelBtn.setAttribute("aria-expanded", "false");
+      }
+    });
+  }
+  // Dynamic Input Box Logic
+  const chatInput = document.getElementById("chat-input");
+  const modernInputBox = document.querySelector(".modern-input-box");
+  const chatThread = document.getElementById("chat-thread");
+  
+  if (chatInput && modernInputBox) {
+    let isFocused = false;
+    let isHovered = false;
+
+    const updateExpandedState = () => {
+      if (isFocused || isHovered) {
+        modernInputBox.classList.add("is-expanded");
+        resizeTextarea();
+      } else {
+        // Prevent collapsing if model selector dropdown is actively open
+        const chatModelBtn = document.getElementById("chat-model-btn");
+        if (chatModelBtn && chatModelBtn.getAttribute("aria-expanded") === "true") {
+           return; 
+        }
+        modernInputBox.classList.remove("is-expanded");
+      }
+    };
+
+    const resizeTextarea = () => {
+      chatInput.style.setProperty("height", "24px", "important");
+      const newHeight = Math.min(chatInput.scrollHeight, 380);
+      chatInput.style.setProperty("height", newHeight + "px", "important");
+      modernInputBox.style.setProperty("--dynamic-height", newHeight + "px");
+    };
+
+    chatInput.addEventListener("input", resizeTextarea);
+    
+    // Precision hover logic
+    modernInputBox.addEventListener("mouseenter", () => { isHovered = true; updateExpandedState(); });
+    modernInputBox.addEventListener("mouseleave", () => { isHovered = false; updateExpandedState(); });
+    
+    // Precision focus logic capturing anything inside the box
+    modernInputBox.addEventListener("focusin", () => { isFocused = true; updateExpandedState(); });
+    modernInputBox.addEventListener("focusout", (e) => { 
+      if (!modernInputBox.contains(e.relatedTarget)) {
+        isFocused = false;
+        updateExpandedState();
+      }
+    });
+
+    // Global click listener to forcefully collapse on interaction outside
+    document.addEventListener("mousedown", (e) => {
+      // If click is not inside modernInputBox, force collapse
+      if (!modernInputBox.contains(e.target)) {
+        isFocused = false;
+        isHovered = false; // Override visual hover if stuck
+        
+        // Also ensure dropdown closes
+        const chatModelMenu = document.getElementById("model-dropdown-menu");
+        const chatModelBtn = document.getElementById("chat-model-btn");
+        if (chatModelMenu) chatModelMenu.classList.add("hidden");
+        if (chatModelBtn) chatModelBtn.setAttribute("aria-expanded", "false");
+        
+        updateExpandedState();
+      }
+    });
+
+    // Smart collapse on chat activity
+    if (chatThread) {
+      const handleScrollBlur = () => {
+        isFocused = false; 
+        isHovered = false; 
+        chatInput.blur();
+        
+        const chatModelMenu = document.getElementById("model-dropdown-menu");
+        const chatModelBtn = document.getElementById("chat-model-btn");
+        if (chatModelMenu) chatModelMenu.classList.add("hidden");
+        if (chatModelBtn) chatModelBtn.setAttribute("aria-expanded", "false");
+        
+        updateExpandedState();
+      };
+      chatThread.addEventListener("wheel", handleScrollBlur, { passive: true });
+      chatThread.addEventListener("touchmove", handleScrollBlur, { passive: true });
+    }
+
+    // Collapse on send attempt
+    const btnSend = document.getElementById("btn-send");
+    if (btnSend) {
+      btnSend.addEventListener("click", () => {
+        setTimeout(() => {
+          isFocused = false;
+          isHovered = false;
+          chatInput.blur();
+          updateExpandedState();
+        }, 50);
+      });
+    }
+  }
+});
 
 // ---------------------------------------------------------------------------
 // RAG – Index status + ingest
