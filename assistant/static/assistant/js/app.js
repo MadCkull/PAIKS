@@ -1116,13 +1116,98 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
   }
-  // Auto-resize chat textarea
+  // Dynamic Input Box Logic
   const chatInput = document.getElementById("chat-input");
-  if (chatInput) {
-    chatInput.addEventListener("input", () => {
-      chatInput.style.height = "auto";
-      chatInput.style.height = Math.min(chatInput.scrollHeight, 200) + "px";
+  const modernInputBox = document.querySelector(".modern-input-box");
+  const chatThread = document.getElementById("chat-thread");
+
+  if (chatInput && modernInputBox) {
+    let isFocused = false;
+    let isHovered = false;
+
+    const updateExpandedState = () => {
+      if (isFocused || isHovered) {
+        modernInputBox.classList.add("is-expanded");
+        resizeTextarea();
+      } else {
+        // Prevent collapsing if model selector dropdown is actively open
+        const chatModelBtn = document.getElementById("chat-model-btn");
+        if (chatModelBtn && chatModelBtn.getAttribute("aria-expanded") === "true") {
+           return;
+        }
+        modernInputBox.classList.remove("is-expanded");
+      }
+    };
+
+    const resizeTextarea = () => {
+      chatInput.style.setProperty("height", "24px", "important");
+      const newHeight = Math.min(chatInput.scrollHeight, 380);
+      chatInput.style.setProperty("height", newHeight + "px", "important");
+      modernInputBox.style.setProperty("--dynamic-height", newHeight + "px");
+    };
+
+    chatInput.addEventListener("input", resizeTextarea);
+
+    // Precision hover logic
+    modernInputBox.addEventListener("mouseenter", () => { isHovered = true; updateExpandedState(); });
+    modernInputBox.addEventListener("mouseleave", () => { isHovered = false; updateExpandedState(); });
+
+    // Precision focus logic capturing anything inside the box
+    modernInputBox.addEventListener("focusin", () => { isFocused = true; updateExpandedState(); });
+    modernInputBox.addEventListener("focusout", (e) => {
+      if (!modernInputBox.contains(e.relatedTarget)) {
+        isFocused = false;
+        updateExpandedState();
+      }
     });
+
+    // Global click listener to forcefully collapse on interaction outside
+    document.addEventListener("mousedown", (e) => {
+      // If click is not inside modernInputBox, force collapse
+      if (!modernInputBox.contains(e.target)) {
+        isFocused = false;
+        isHovered = false; // Override visual hover if stuck
+
+        // Also ensure dropdown closes
+        const chatModelMenu = document.getElementById("model-dropdown-menu");
+        const chatModelBtn = document.getElementById("chat-model-btn");
+        if (chatModelMenu) chatModelMenu.classList.add("hidden");
+        if (chatModelBtn) chatModelBtn.setAttribute("aria-expanded", "false");
+
+        updateExpandedState();
+      }
+    });
+
+    // Smart collapse on chat activity
+    if (chatThread) {
+      const handleScrollBlur = () => {
+        isFocused = false;
+        isHovered = false;
+        chatInput.blur();
+
+        const chatModelMenu = document.getElementById("model-dropdown-menu");
+        const chatModelBtn = document.getElementById("chat-model-btn");
+        if (chatModelMenu) chatModelMenu.classList.add("hidden");
+        if (chatModelBtn) chatModelBtn.setAttribute("aria-expanded", "false");
+
+        updateExpandedState();
+      };
+      chatThread.addEventListener("wheel", handleScrollBlur, { passive: true });
+      chatThread.addEventListener("touchmove", handleScrollBlur, { passive: true });
+    }
+
+    // Collapse on send attempt
+    const btnSend = document.getElementById("btn-send");
+    if (btnSend) {
+      btnSend.addEventListener("click", () => {
+        setTimeout(() => {
+          isFocused = false;
+          isHovered = false;
+          chatInput.blur();
+          updateExpandedState();
+        }, 50);
+      });
+    }
   }
 });
 
