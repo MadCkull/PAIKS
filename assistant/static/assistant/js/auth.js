@@ -1,6 +1,6 @@
 async function fetchAuthState() {
   try {
-    const res = await fetch(`${API_BASE}/auth/status`);
+    const res = await fetchWithTimeout(`${API_BASE}/auth/status`, {}, 10000); // 10s timeout
     return await res.json();
   } catch {
     return { authenticated: false, user: null };

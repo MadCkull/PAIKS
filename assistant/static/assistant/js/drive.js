@@ -85,7 +85,7 @@ function renderLocalFileList(files) {
 
 async function loadLocalFiles() {
   try {
-    const res = await fetch(`${API_BASE}/local/files`);
+    const res = await fetchWithTimeout(`${API_BASE}/local/files`);
     const data = await res.json();
     renderLocalFileList(data.files || []);
     return data.files || [];
@@ -98,7 +98,7 @@ async function loadLocalFiles() {
 window.deleteLocalFile = async function(fileId) {
   if (!confirm("Remove this file and its indexed chunks?")) return;
   try {
-    const res = await fetch(`${API_BASE}/local/delete`, {
+    const res = await fetchWithTimeout(`${API_BASE}/local/delete`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ file_id: fileId }),
@@ -131,7 +131,7 @@ async function uploadLocalFiles(fileList) {
 
   try {
     if (progressBar) progressBar.style.width = "40%";
-    const res = await fetch(`${API_BASE}/local/upload`, { method: "POST", body: formData });
+    const res = await fetchWithTimeout(`${API_BASE}/local/upload`, { method: "POST", body: formData });
     if (progressBar) progressBar.style.width = "80%";
     const data = await res.json();
 
@@ -205,7 +205,7 @@ window.updateDriveModal = async function() {
       const el = document.getElementById("sync-console");
       if (el) el.innerHTML = `<div class="log-warn">[WARN] Not connected to Google Drive.</div>`;
     } else {
-      const filesRes = await fetch(`${API_BASE}/drive/files?pageSize=100`);
+      const filesRes = await fetchWithTimeout(`${API_BASE}/drive/files?pageSize=100`);
       const filesData = await filesRes.json();
       _driveFiles = filesData.files || [];
       const folderName = filesData.folder?.name || stats.folder?.name || "Google Drive";
@@ -446,7 +446,7 @@ window.openFolderPicker = function() {
 
 async function selectFolder(folderId, folderName) {
   try {
-    const res = await fetch(`${API_BASE}/drive/set-folder`, {
+    const res = await fetchWithTimeout(`${API_BASE}/drive/set-folder`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ folder_id: folderId, folder_name: folderName }),
@@ -463,7 +463,7 @@ async function selectFolder(folderId, folderName) {
 
 async function clearFolderFilter() {
   try {
-    await fetch(`${API_BASE}/drive/set-folder`, {
+    await fetchWithTimeout(`${API_BASE}/drive/set-folder`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),

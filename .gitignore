@@ -51,7 +51,6 @@ instance/
 # Credentials, Secrets & Configs
 # ==========================================
 .env
-.env.*
 credentials.json
 token.json
 *.pem
@@ -78,5 +77,3 @@ Desktop.ini
 # Project Specific
 # ==========================================
 .storage/
-implementation Plan.md
-UIConcept/

@@ -1,6 +1,29 @@
+function getCsrfToken() {
+  const name = "csrftoken";
+  let cookieValue = null;
+  if (document.cookie && document.cookie !== "") {
+    const cookies = document.cookie.split(";");
+    for (let i = 0; i < cookies.length; i++) {
+      const cookie = cookies[i].trim();
+      if (cookie.substring(0, name.length + 1) === (name + "=")) {
+        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+        break;
+      }
+    }
+  }
+  return cookieValue;
+}
+
 function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
+  
+  if (options.method && options.method.toUpperCase() === "POST") {
+    options.headers = options.headers || {};
+    const token = getCsrfToken();
+    if (token) options.headers["X-CSRFToken"] = token;
+  }
+  
   return fetch(url, { ...options, signal: controller.signal })
     .finally(() => clearTimeout(id));
 }
@@ -109,4 +132,13 @@ function timeAgo(isoString) {
   if (diff < 3600) return Math.floor(diff / 60) + "m ago";
   if (diff < 86400) return Math.floor(diff / 3600) + "h ago";
   return Math.floor(diff / 86400) + "d ago";
+}
+
+function removeAuthGuard() {
+  const guard = document.getElementById("auth-guard");
+  if (guard) {
+    guard.style.opacity = "0";
+    guard.style.transition = "opacity 0.4s ease";
+    setTimeout(() => guard.remove(), 400);
+  }
 }

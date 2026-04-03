@@ -13,6 +13,8 @@ LLM_CONFIG_PATH = STORAGE_DIR / "llm_config.json"
 LOCAL_FILES_PATH = STORAGE_DIR / "local_files"
 LOCAL_FILES_CACHE = STORAGE_DIR / "local_files_cache.json"
 
+LOCAL_ALLOWED_EXTENSIONS = {".pdf", ".docx", ".doc", ".txt", ".md", ".csv"}
+
 LOCAL_FILES_PATH.mkdir(exist_ok=True, parents=True)
 
 _DEFAULT_LLM_CONFIG = {

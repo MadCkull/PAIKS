@@ -24,6 +24,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
       
       if (typeof updateConnectionUI === "function") await updateConnectionUI();
+      if (typeof removeAuthGuard === "function") removeAuthGuard();
+  } else {
+      if (typeof removeAuthGuard === "function") removeAuthGuard();
   }
 
   if (typeof initSearch === "function") initSearch();
