@@ -1,0 +1,248 @@
+/* colors.css — PAIKS Design Tokens */
+
+/* Dark Mode (Default) */
+:root {
+  /* Core Base */
+  --bg-deep: #090a0f;
+  --bg-app: radial-gradient(ellipse at top left, #12141d, #090a0f);
+
+  /* Glass Surfaces */
+  --glass-bg: rgba(255, 255, 255, 0.03);
+  --glass-bg-hover: rgba(255, 255, 255, 0.06);
+  --glass-bg-active: rgba(255, 255, 255, 0.1);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-border-light: rgba(255, 255, 255, 0.15);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+
+  /* Text */
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.7);
+  --text-dim: rgba(255, 255, 255, 0.4);
+
+  /* Accent */
+  --accent: #818cf8;
+  --accent-hover: #a5b4fc;
+  --accent-bg: rgba(129, 140, 248, 0.15);
+  --accent-glow: rgba(129, 140, 248, 0.3);
+
+  /* Source: Cloud & Local */
+  --cloud: #60a5fa;
+  --cloud-bg: rgba(96, 165, 250, 0.15);
+  --cloud-glow: rgba(96, 165, 250, 0.4);
+  --local: #f59e0b;
+  --local-bg: rgba(245, 158, 11, 0.15);
+  --local-glow: rgba(245, 158, 11, 0.4);
+
+  /* Status */
+  --color-success: #34d399;
+  --color-success-bg: rgba(52, 211, 153, 0.15);
+  --color-error: #f87171;
+  --color-error-bg: rgba(248, 113, 113, 0.15);
+  --color-warning: #fbbf24;
+
+  /* Inputs */
+  --input-bg: rgba(0, 0, 0, 0.2);
+  --input-border: rgba(255, 255, 255, 0.1);
+  --input-focus: var(--accent);
+
+  /* Bubbles */
+  --bubble-user: rgba(255, 255, 255, 0.06);
+
+  /* Sidebar */
+  --sidebar-bg: rgba(15, 17, 26, 0.6);
+  --sidebar-border: var(--glass-border);
+}
+
+/* Light Mode */
+[data-theme="light"] {
+  --bg-deep: #f8fafc;
+  --bg-app: linear-gradient(135deg, #ffffff, #f1f5f9);
+
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-bg-hover: rgba(255, 255, 255, 0.9);
+  --glass-bg-active: rgba(255, 255, 255, 1);
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --glass-border-light: rgba(0, 0, 0, 0.15);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-dim: #94a3b8;
+
+  --accent: #6366f1;
+  --accent-hover: #4f46e5;
+  --accent-bg: rgba(99, 102, 241, 0.1);
+  --accent-glow: rgba(99, 102, 241, 0.2);
+
+  --cloud: #3b82f6;
+  --cloud-bg: rgba(59, 130, 246, 0.1);
+  --cloud-glow: rgba(59, 130, 246, 0.3);
+  --local: #d97706;
+  --local-bg: rgba(217, 119, 6, 0.1);
+  --local-glow: rgba(217, 119, 6, 0.3);
+
+  --color-success: #10b981;
+  --color-success-bg: rgba(16, 185, 129, 0.1);
+  --color-error: #ef4444;
+  --color-error-bg: rgba(239, 68, 68, 0.1);
+  --color-warning: #f59e0b;
+
+  --input-bg: rgba(255, 255, 255, 0.8);
+  --input-border: rgba(0, 0, 0, 0.1);
+  --input-focus: var(--accent);
+
+  --bubble-user: rgba(0, 0, 0, 0.04);
+
+  --sidebar-bg: rgba(248, 250, 252, 0.8);
+  --sidebar-border: var(--glass-border);
+}
+
+/* =========================================================================
+   PAIKS – Google Drive AI Assistant  —  Modern SaaS Design System
+   Light / Dark theme via [data-theme] on <html>
+   ========================================================================= */
+
+/* ----- Light Theme ----- */
+:root,
+[data-theme="light"] {
+  --bg-deep:       #f0f2f5;
+  --bg-main:       #f5f6f8;
+  --bg-card:       #ffffff;
+  --bg-card-hover: #fafafb;
+  --bg-input:      #f5f6f8;
+  --bg-overlay:    rgba(0, 0, 0, 0.35);
+
+  /* Sidebar – always dark */
+  --sidebar-bg:       #0e0c15;
+  --sidebar-text:     #e0dfe4;
+  --sidebar-muted:    #8e8c99;
+  --sidebar-dim:      #5a5869;
+  --sidebar-hover:    rgba(255,255,255,0.06);
+  --sidebar-active-bg:#6c5ce7;
+  --sidebar-border:   rgba(255,255,255,0.06);
+
+  --border-dim:    #e2e4e9;
+  --border-accent: #d0d3db;
+
+  --accent:        #6c5ce7;
+  --accent-light:  #8b7cf6;
+  --accent-glow:   rgba(108, 92, 231, 0.18);
+  --accent-bg:     rgba(108, 92, 231, 0.07);
+
+  --green:         #10b981;
+  --green-light:   #059669;
+  --green-glow:    rgba(16, 185, 129, 0.15);
+  --green-bg:      rgba(16, 185, 129, 0.07);
+
+  --amber:         #f59e0b;
+  --red:           #ef4444;
+
+  --text:          #0f172a;
+  --text-secondary:#334155;
+  --text-muted:    #64748b;
+  --text-dim:      #94a3b8;
+
+  --font:          'Inter', system-ui, -apple-system, sans-serif;
+  --mono:          'JetBrains Mono', ui-monospace, monospace;
+
+  --radius-sm:     10px;
+  --radius-md:     14px;
+  --radius-lg:     20px;
+  --radius-xl:     24px;
+  --radius-pill:   999px;
+
+  --ease:          cubic-bezier(.4,0,.2,1);
+
+  --shadow-xs:     0 1px 2px rgba(0,0,0,.05);
+  --shadow-sm:     0 1px 3px rgba(0,0,0,.07), 0 1px 2px rgba(0,0,0,.04);
+  --shadow-md:     0 4px 6px -1px rgba(0,0,0,.07), 0 2px 4px -2px rgba(0,0,0,.05);
+  --shadow-lg:     0 10px 15px -3px rgba(0,0,0,.08), 0 4px 6px -4px rgba(0,0,0,.05);
+  --shadow-xl:     0 20px 25px -5px rgba(0,0,0,.08), 0 8px 10px -6px rgba(0,0,0,.04);
+}
+
+/* ----- Dark Theme ----- */
+[data-theme="dark"] {
+  --bg-deep:       #0c0a14;
+  --bg-main:       #100e1a;
+  --bg-card:       #1a1726;
+  --bg-card-hover: #211e30;
+  --bg-input:      #1a1726;
+  --bg-overlay:    rgba(0, 0, 0, 0.6);
+
+  --sidebar-bg:    #080710;
+  --sidebar-border:rgba(255,255,255,0.04);
+
+  --border-dim:    rgba(255,255,255,0.07);
+  --border-accent: rgba(255,255,255,0.12);
+
+  --text:          #f1f5f9;
+  --text-secondary:#cbd5e1;
+  --text-muted:    #94a3b8;
+  --text-dim:      #64748b;
+
+  --accent-glow:   rgba(108, 92, 231, 0.3);
+  --accent-bg:     rgba(108, 92, 231, 0.14);
+  --green-glow:    rgba(16, 185, 129, 0.25);
+  --green-bg:      rgba(16, 185, 129, 0.12);
+
+  --shadow-xs:     0 1px 2px rgba(0,0,0,.3);
+  --shadow-sm:     0 1px 3px rgba(0,0,0,.4);
+  --shadow-md:     0 4px 6px rgba(0,0,0,.4);
+  --shadow-lg:     0 10px 15px rgba(0,0,0,.4);
+  --shadow-xl:     0 20px 30px rgba(0,0,0,.5);
+}
+
+
+/* === RESET & BASE === */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: var(--bg-app);
+  color: var(--text-primary);
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+input, textarea, select {
+  font-family: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+a { color: inherit; text-decoration: none; }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--glass-border-light); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+.app-bg {
+  position: fixed; inset: 0; z-index: -1;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% -20%, rgba(108,92,231,.06), transparent 70%),
+    var(--bg-app);
+}
+[data-theme="dark"] .app-bg {
+  background:
+    radial-gradient(ellipse 80% 60% at 50% -20%, rgba(108,92,231,.12), transparent 70%),
+    var(--bg-main);
+}
+

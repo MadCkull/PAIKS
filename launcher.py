@@ -22,7 +22,6 @@ from rich import box
 
 # Configuration
 PORT_DJANGO = 8000
-PORT_FLASK = 5001
 VENV_PYTHON = os.path.join(".venv", "Scripts", "python.exe")
 REQUIREMENTS = "requirements.txt"
 BASE_DIR = pathlib.Path(__file__).resolve().parent
@@ -56,7 +55,6 @@ class PAIKSLauncher:
         self.stats = {
             "docs_total": 0,
             "last_sync": "Never",
-            "flask_status": "[red]Offline[/red]",
             "django_status": "[red]Offline[/red]",
         }
 
@@ -121,8 +119,7 @@ class PAIKSLauncher:
         status_table.add_column("Status", justify="center")
         status_table.add_column("Endpoint", style="green")
         
-        status_table.add_row("Flask Search API", self.stats["flask_status"], f"http://127.0.0.1:{PORT_FLASK}")
-        status_table.add_row("Django Frontend", self.stats["django_status"], f"http://127.0.0.1:{PORT_DJANGO}")
+        status_table.add_row("Django Server", self.stats["django_status"], f"http://127.0.0.1:{PORT_DJANGO}")
 
         # Stats Panel
         uptime = str(datetime.now() - self.start_time).split(".")[0]
@@ -150,17 +147,6 @@ class PAIKSLauncher:
 
             with self.console.status("[bold blue]Cleaning environment...", spinner="dots"):
                 self.kill_process_on_port(PORT_DJANGO)
-                self.kill_process_on_port(PORT_FLASK)
-
-            # Start Flask
-            flask_proc = subprocess.Popen(
-                [sys.executable, "flask_api.py"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-            )
-            self.processes.append(flask_proc)
-            time.sleep(2)
-            if flask_proc.poll() is None:
-                self.stats["flask_status"] = "[bold green]Online[/bold green]"
 
             # Start Django
             django_proc = subprocess.Popen(
@@ -174,8 +160,6 @@ class PAIKSLauncher:
 
             with Live(self.make_dashboard(), refresh_per_second=1, console=self.console) as live:
                 while True:
-                    if flask_proc.poll() is not None:
-                        self.stats["flask_status"] = "[bold red]Crashed[/bold red]"
                     if django_proc.poll() is not None:
                         self.stats["django_status"] = "[bold red]Crashed[/bold red]"
                     
