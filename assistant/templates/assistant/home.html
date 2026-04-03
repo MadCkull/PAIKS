@@ -1,68 +1,26 @@
 {% extends "assistant/base.html" %}
-{% block title %}Home{% endblock %}
-{% block nav_home %}active{% endblock %}
+{% block title %}PAIKS · AI Assistant{% endblock %}
+{% block nav_files %}active{% endblock %}
 
 {% block content %}
-<!-- Hero -->
-<section class="hero">
-  <div id="auth-status-badge" class="badge badge-dim">
-    <span class="connection-dot disconnected"></span> Not Connected
-  </div>
-  <h1>Unlock the power of AI</h1>
-  <p>Chat with your Google Drive documents — Experience the power of AI-assisted search and analysis.</p>
-  <div class="hero-actions">
-    <button id="btn-connect" class="btn btn-success" onclick="connectDrive()">
-      🔗 Connect Google Drive
-    </button>
-    <button id="btn-disconnect" class="btn btn-danger hidden" onclick="disconnectDrive()">
-      ✕ Disconnect
-    </button>
-    <a href="{% url 'dashboard' %}" class="btn btn-outline">📊 Open Dashboard</a>
-  </div>
-</section>
+<!-- Override main to use main-area layout (no padding, full height flex) -->
+<style>
+  #main-content { padding: 0; gap: 0; overflow: hidden; }
+  #main-content > .page-footer { display: none; }
+</style>
 
-<!-- Search -->
-<section class="search-panel">
-  <div class="search-row">
-    <input id="search-input" class="search-input"
-      placeholder="Search your Drive files — e.g. project roadmap, invoices, meeting notes…" autocomplete="off" />
-    <button id="search-btn" class="btn btn-primary">🔍 Search</button>
-  </div>
-  <div id="search-results" class="results-container"></div>
-</section>
+<!-- ── MAIN AREA ──────────────────────────────────────────────────── -->
+<div class="main-area" style="flex:1;display:flex;flex-direction:column;height:100vh;overflow:hidden;">
 
-<!-- Feature Cards -->
-<section class="features-grid mt-lg">
+  {% include "assistant/components/_toolbar.html" %}
+  {% include "assistant/components/_chat_thread.html" %}
+  {% include "assistant/components/_chat_input.html" %}
 
-  <article class="card feature-card feature-card-clickable" id="card-sync"
-    onclick="handleFeatureSync()" role="button" tabindex="0"
-    aria-label="Sync your Google Drive now"
-    style="background: linear-gradient(135deg, rgba(16,185,129,.06), rgba(16,185,129,.02)); border-color: rgba(16,185,129,.15);">
-    <div class="feature-icon" style="background:linear-gradient(135deg,#d1fae5,#a7f3d0);color:#059669;" id="sync-icon">🔄</div>
-    <h3>Smart Sync</h3>
-    <p>Automatically sync and index your Google Drive files. Stay up to date with one-click re-sync from the dashboard.</p>
-    <span class="feature-cta" style="color:#059669;">Sync now →</span>
-  </article>
+</div><!-- /.main-area -->
 
-  <article class="card feature-card feature-card-clickable" id="card-search"
-    onclick="handleFeatureSearch()" role="button" tabindex="0"
-    aria-label="Open AI Assistant chat"
-    style="background: linear-gradient(135deg, rgba(108,92,231,.06), rgba(108,92,231,.02)); border-color: rgba(108,92,231,.15);">
-    <div class="feature-icon" style="background:linear-gradient(135deg,#e0e7ff,#c7d2fe);color:#4f46e5;">🔍</div>
-    <h3>AI-Powered Search</h3>
-    <p>Search across all your documents with intelligent matching — not just file names. Try Smart RAG search too.</p>
-    <span class="feature-cta" style="color:#6c5ce7;">Start searching →</span>
-  </article>
+{% include "assistant/components/_sources_panel.html" %}
+{% include "assistant/components/_settings.html" %}
+{% include "assistant/components/_drive_manager.html" %}
+{% include "assistant/components/_dashboard.html" %}
 
-  <article class="card feature-card feature-card-clickable"
-    onclick="window.location.href='{% url 'drive_files' %}'" role="button" tabindex="0"
-    aria-label="Open the file browser"
-    style="background: linear-gradient(135deg, rgba(168,85,247,.06), rgba(168,85,247,.02)); border-color: rgba(168,85,247,.15);">
-    <div class="feature-icon" style="background:linear-gradient(135deg,#ede9fe,#ddd6fe);color:#7c3aed;">📁</div>
-    <h3>File Browser</h3>
-    <p>Browse and preview all your synced files with a sleek, modern interface. Jump to any file in one click.</p>
-    <span class="feature-cta" style="color:#7c3aed;">Browse files →</span>
-  </article>
-
-</section>
 {% endblock %}

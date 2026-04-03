@@ -1,0 +1,63 @@
+<!-- ── SETTINGS MODAL ────────────────────────────────────────────── -->
+<div id="settings-overlay" class="overlay hidden">
+  <div class="modal modal-md">
+    <div class="modal-header">
+      <h3>⚙️ Settings</h3>
+      <button class="btn-close btn-icon" onclick="closeModal('settings-overlay')">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <p class="section-label" style="margin:0 0 12px;">Data Sources</p>
+
+      <!-- Google Drive -->
+      <div class="source-card">
+        <div class="source-icon cloud">☁️</div>
+        <div class="source-info">
+          <div class="source-name">Google Drive</div>
+          <div class="source-path" id="settings-drive-folder">Not connected</div>
+          <div class="source-status" id="settings-drive-status" style="color:var(--text-dim);">Not connected</div>
+        </div>
+        <div class="source-action" style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
+          <button class="btn btn-sm btn-outline" onclick="connectDrive()">Connect</button>
+          <button class="btn btn-sm btn-danger" id="btn-disconnect-settings" style="display:none;" onclick="disconnectDrive()">Disconnect</button>
+        </div>
+      </div>
+
+      <!-- Local Files -->
+      <div class="source-card">
+        <div class="source-icon local">💻</div>
+        <div class="source-info">
+          <div class="source-name">Local Files</div>
+          <div class="source-path">Sync via PAIKS local folder</div>
+          <div class="source-status" style="color:var(--color-success);">✓ Available</div>
+        </div>
+        <div class="source-action">
+          <button class="btn btn-sm btn-outline" onclick="ragIngest()">⚡ Index</button>
+        </div>
+      </div>
+
+      <hr class="divider" />
+
+      <!-- LLM Config -->
+      <p class="section-label" style="margin:0 0 12px;">LLM Configuration</p>
+      <div class="form-group">
+        <label>Provider</label>
+        <select id="llm-provider-select" class="form-select" onchange="onProviderChange()">
+          <option value="ollama">Ollama (Local)</option>
+          <option value="openai_compat">LM Studio / OpenAI Compatible</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Endpoint URL</label>
+        <input id="llm-url-input" type="text" class="form-input" value="http://localhost:11434" />
+      </div>
+      <div class="form-group">
+        <label>Embedding Model</label>
+        <input type="text" class="form-input" value="all-MiniLM-L6-v2 (built-in)" disabled style="opacity:.6;" />
+        <p style="font-size:.75rem;color:var(--text-dim);margin-top:6px;">ChromaDB default ONNX embedding model.</p>
+      </div>
+      <button class="btn btn-primary w-100" onclick="saveLLMConfig()">Save Configuration</button>
+
+    </div>
+  </div>
+</div>

@@ -1,0 +1,30 @@
+<!-- Chat Thread -->
+<div id="chat-thread" class="chat-thread">
+  <div class="chat-thread-inner">
+
+    <!-- Empty / welcome state -->
+    <div id="empty-state" class="empty-state">
+      <div class="empty-icon">🧠</div>
+      <h2>How can I assist you today?</h2>
+      <p>Ask questions about your indexed documents — from Google Drive and local files. I'll find the answers and show you the sources.</p>
+      <div class="empty-suggestions">
+        <div class="suggestion-card" onclick="setInput('Summarize my recent documents')">
+          <p>📄 Summarize my <b>recent documents</b></p>
+        </div>
+        <div class="suggestion-card" onclick="setInput('What are the key takeaways from my files?')">
+          <p>💡 Key takeaways from <b>my files</b></p>
+        </div>
+        <div class="suggestion-card" onclick="setInput('List all action items in my documents')">
+          <p>✅ List all <b>action items</b></p>
+        </div>
+        <div class="suggestion-card" onclick="setInput('Find important dates and deadlines')">
+          <p>📅 Find important <b>dates & deadlines</b></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Messages rendered here by JS -->
+    <div id="chat-messages" style="display:flex;flex-direction:column;gap:32px;width:100%;"></div>
+
+  </div>
+</div>
