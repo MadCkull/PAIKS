@@ -241,9 +241,16 @@ def search(request):
                     "relevance_hint": f"{'Cloud Match' if source_type == 'cloud' else 'Local Match'} · Reranked Score: {score}",
                 })
 
+        answer_str = str(response).strip()
+        if answer_str == "Empty Response" or not answer_str or answer_str == "None":
+            if len(hits) == 0:
+                answer_str = "I couldn't find any relevant information in your indexed documents. Have you clicked 'Sync/Ingest' yet?"
+            else:
+                answer_str = "I found some relevant files, but couldn't formulate a proper response based on the context rules."
+
         return JsonResponse({
             "query": query,
-            "answer": str(response),
+            "answer": answer_str,
             "answer_model": "LlamaIndex Engine",
             "answer_error": None,
             "results": hits,

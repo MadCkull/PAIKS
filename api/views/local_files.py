@@ -1,13 +1,17 @@
 import os
 import pathlib
 import time
+import json
 import logging
 from django.http import JsonResponse
 
 from api.services.config import local_files_meta, local_files_meta_save, LOCAL_FILES_PATH, LOCAL_ALLOWED_EXTENSIONS, load_app_settings
-from api.services.text_extraction import extract_text_from_local
-from api.services.chunking import chunk_text
-from api.services.chromadb_store import get_collection
+
+# --- NEW RAG ARCHITECTURE IMPORTS ---
+from api.services.rag.indexer import get_qdrant_client, LOCAL_COLLECTION
+from api.services.rag.ingestion.parsers import parse_local_file
+from api.services.rag.ingestion.chunking import chunk_documents
+from api.services.rag.ingestion.pipeline import ingest_nodes_to_collection
 
 logger = logging.getLogger(__name__)
 
@@ -18,12 +22,9 @@ def get_tree(request):
         return JsonResponse({"error": "Local root path not set or invalid"}, status=400)
 
     def build_tree(current_path, depth=0):
-        if depth > 5: # Reasonable limit for initial release
-             return None
-        
+        if depth > 5: return None
         name = os.path.basename(current_path) or current_path
         tree = {"name": name, "path": current_path, "type": "dir", "children": []}
-        
         try:
             with os.scandir(current_path) as entries:
                 for entry in entries:
@@ -41,7 +42,6 @@ def get_tree(request):
                             })
         except (PermissionError, OSError):
             pass
-            
         return tree
 
     try:
@@ -58,7 +58,7 @@ def upload(request):
     if not uploaded:
         return JsonResponse({"error": "No files provided"}, status=400)
 
-    col = get_collection()
+    client = get_qdrant_client()
     meta_list = local_files_meta()
     results = []
 
@@ -82,46 +82,52 @@ def upload(request):
                 dest_file.write(chunk)
                 
         size = dest.stat().st_size
+        file_id = f"local__{dest.resolve()}"
 
-        text = extract_text_from_local(dest)
-        if not text or not text.strip():
+        file_info = {
+            "id": file_id,
+            "name": dest.name,
+            "local_path": str(dest.resolve()),
+            "modified": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(os.path.getmtime(dest))),
+        }
+
+        doc = parse_local_file(file_info)
+        if not doc:
             dest.unlink(missing_ok=True)
             results.append({"name": original_name, "status": "error", "reason": "Could not extract text"})
             continue
-
-        chunks = chunk_text(text)
-        if not chunks:
+            
+        nodes = chunk_documents([doc])
+        if not nodes:
             dest.unlink(missing_ok=True)
             results.append({"name": original_name, "status": "error", "reason": "Text too short to chunk"})
             continue
 
-        file_id = "local__" + dest.name
+        # We delete old versions of this file if they existed in Qdrant Local Collection
         try:
-            existing = col.get(where={"source": "local", "file_name": dest.name})
-            if existing and existing.get("ids"):
-                col.delete(ids=existing["ids"])
-        except Exception:
-            pass
+            if client.collection_exists(LOCAL_COLLECTION):
+                client.delete(
+                    collection_name=LOCAL_COLLECTION,
+                    points_selector={"filter": {"must": [{"key": "file_name", "match": {"value": dest.name}}]}}
+                )
+        except Exception as e:
+            logger.warning(f"Error deleting old qdrant points: {e}")
 
-        ids = [f"{file_id}__chunk__{i}" for i in range(len(chunks))]
-        metadatas = [
-            {"source": "local", "file_name": dest.name, "file_path": str(dest), "chunk_index": i}
-            for i in range(len(chunks))
-        ]
-        col.upsert(ids=ids, documents=chunks, metadatas=metadatas)
+        # Inject into Qdrant Local
+        ingest_nodes_to_collection(nodes, LOCAL_COLLECTION)
 
         file_meta = {
             "id": file_id,
             "name": dest.name,
             "original_name": original_name,
             "size": size,
-            "chunks": len(chunks),
+            "chunks": len(nodes),
             "uploaded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "ext": ext,
         }
-        meta_list = [m for m in meta_list if m.get("id") != file_id]
+        meta_list = [m for m in meta_list if m.get("name") != dest.name] # prevent dupes by name
         meta_list.append(file_meta)
-        results.append({"name": original_name, "status": "indexed", "chunks": len(chunks)})
+        results.append({"name": original_name, "status": "indexed", "chunks": len(nodes)})
 
     local_files_meta_save(meta_list)
     return JsonResponse({"results": results, "total_files": len([r for r in results if r["status"] == "indexed"])})
@@ -136,21 +142,37 @@ def delete(request):
     if not file_id or not file_id.startswith("local__"):
         return JsonResponse({"error": "Invalid file_id"}, status=400)
 
-    file_name = file_id.replace("local__", "", 1)
-    dest = LOCAL_FILES_PATH / file_name
+    # In our old logic, file_id was sometimes just 'local__filename'
+    file_name = file_id.split("local__")[-1]
+    
+    # We attempt to find the file
+    found_dest = None
+    for p in LOCAL_FILES_PATH.iterdir():
+        if p.name == file_name or str(p.resolve()) == file_name:
+            found_dest = p
+            break
+            
+    if not found_dest:
+        dest = LOCAL_FILES_PATH / file_name
+    else:
+        dest = found_dest
 
+    # Delete from Qdrant Local Collection via file_name filter
     try:
-        col = get_collection()
-        existing = col.get(where={"source": "local", "file_name": file_name})
-        if existing and existing.get("ids"):
-            col.delete(ids=existing["ids"])
+        client = get_qdrant_client()
+        if client.collection_exists(LOCAL_COLLECTION):
+             client.delete(
+                collection_name=LOCAL_COLLECTION,
+                points_selector={"filter": {"must": [{"key": "file_name", "match": {"value": dest.name}}]}}
+             )
     except Exception as exc:
-        logger.warning("ChromaDB delete error for %s: %s", file_name, exc)
+        logger.warning(f"Qdrant delete error for {dest.name}: {exc}")
 
     if dest.exists():
-        dest.unlink()
+        dest.unlink(missing_ok=True)
 
-    meta_list = [m for m in local_files_meta() if m.get("id") != file_id]
+    meta_list = local_files_meta()
+    meta_list = [m for m in meta_list if m.get("id") != file_id and m.get("name") != dest.name]
     local_files_meta_save(meta_list)
 
-    return JsonResponse({"status": "deleted", "file_id": file_id})
+    return JsonResponse({"status": "deleted"})
