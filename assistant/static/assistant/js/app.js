@@ -1,13 +1,11 @@
 document.addEventListener("DOMContentLoaded", async () => {
-  if (typeof initMobileToggle === "function") initMobileToggle();
+  // ── Core UI Init (always, never fails) ─────────────────────
   if (typeof initSidebarCollapse === "function") initSidebarCollapse();
   if (typeof initToolbar === "function") initToolbar();
   if (typeof initNewChatInput === "function") initNewChatInput();
   if (typeof initChatUI === "function") initChatUI();
-  if (typeof initModelDropdown === "function") initModelDropdown();
-
   if (typeof renderHistoryList === "function") renderHistoryList();
-  
+
   const newChatBtn = document.querySelector(".btn-new-chat");
   if (newChatBtn) {
     newChatBtn.addEventListener("click", e => {
@@ -16,63 +14,62 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  if (typeof checkAuthStatus === "function") {
-      const authed = await checkAuthStatus();
-      if (!authed && window.location.pathname !== "/login/") {
-        window.location.href = "/login/";
-        return;
-      }
-      
-      if (typeof updateConnectionUI === "function") await updateConnectionUI();
-      if (typeof removeAuthGuard === "function") removeAuthGuard();
-  } else {
-      if (typeof removeAuthGuard === "function") removeAuthGuard();
-  }
+  // ── Mode Detection ─────────────────────────────────────────
+  const mode = localStorage.getItem("paiks-mode"); // "local", "drive", or null
 
-  if (typeof initSearch === "function") initSearch();
-
-  if (document.getElementById("stat-total")) {
-    if(typeof loadDashboardStats === "function") loadDashboardStats();
-    if(typeof loadFolderBadge === "function") loadFolderBadge();
-  }
-  
-  if (document.getElementById("chat-thread")) {
-    if(typeof loadRagStatus === "function") loadRagStatus();
-    if(typeof loadLLMStatus === "function") loadLLMStatus();
-    if(typeof updateDashboardStats === "function") updateDashboardStats();
-    if(typeof updateToolbarContext === "function") updateToolbarContext();
-    if(typeof updateSettingsModal === "function") updateSettingsModal();
-  }
-
-  if (document.getElementById("files-container")) {
-    if(typeof loadFiles === "function") loadFiles();
-    if(typeof loadRagStatus === "function") loadRagStatus();
-    if(typeof loadLLMStatus === "function") loadLLMStatus();
-    
-    if (window.location.hash === "#ai-assistant-chat") {
-      requestAnimationFrame(() => {
-        const chat = document.getElementById("ai-assistant-chat");
-        if (chat) chat.scrollIntoView({ behavior: "smooth", block: "start" });
-        const rag = document.getElementById("rag-input");
-        if (rag) setTimeout(() => rag.focus(), 400);
-      });
+  if (!mode) {
+    // No mode chosen yet — send to login
+    if (window.location.pathname !== "/login/") {
+      window.location.href = "/login/";
+      return;
     }
   }
 
-  const fileSearchInput = document.getElementById("file-search-input");
-  if (fileSearchInput) {
-    let timeout;
-    fileSearchInput.addEventListener("input", () => {
-      clearTimeout(timeout);
-      timeout = setTimeout(() => {
-          if(typeof loadFiles === "function") loadFiles(fileSearchInput.value.trim());
-      }, 500);
-    });
+  if (mode === "drive") {
+    // Drive mode — check if still authenticated
+    try {
+      const authed = typeof checkAuthStatus === "function" ? await checkAuthStatus() : false;
+      if (!authed) {
+        // Token gone/expired — still let them in but note they're offline
+        console.warn("Drive mode but not authenticated — running in degraded mode");
+      }
+      if (typeof updateConnectionUI === "function") {
+        try { await updateConnectionUI(); } catch(_) {}
+      }
+    } catch(_) {
+      console.warn("Auth check failed — continuing offline");
+    }
   }
 
+  // In local mode, skip all auth checks
+  if (mode === "local") {
+    // Set sidebar user name to "Local User"
+    const nameEl = document.getElementById("sidebar-user-name");
+    if (nameEl) nameEl.textContent = "Local User";
+  }
+
+  // Remove auth guard immediately — don't wait for anything
+  if (typeof removeAuthGuard === "function") removeAuthGuard();
+
+  // ── Feature Init (independent, non-blocking) ──────────────
+  if (typeof initSearch === "function") initSearch();
+
+  // Each of these is wrapped independently so one failure doesn't block others
+  const safeCall = async (fn) => { try { await fn(); } catch(e) { console.warn("Init failed:", e.message); } };
+
+  if (document.getElementById("chat-thread")) {
+    safeCall(() => typeof loadRagStatus === "function" && loadRagStatus());
+    safeCall(() => typeof loadLLMStatus === "function" && loadLLMStatus());
+    safeCall(() => typeof updateDashboardStats === "function" && updateDashboardStats());
+    safeCall(() => typeof updateToolbarContext === "function" && updateToolbarContext());
+    // Settings modal loads on-demand when opened, not on boot
+  }
+
+  // ── Google Drive connected notification ────────────────────
   const params = new URLSearchParams(window.location.search);
   if (params.get("connected") === "1") {
-    if(typeof showToast === "function") showToast("Google Drive connected successfully!", "success");
+    localStorage.setItem("paiks-mode", "drive");
+    if (typeof showToast === "function") showToast("Google Drive connected successfully!", "success");
     window.history.replaceState({}, "", window.location.pathname);
   }
 });

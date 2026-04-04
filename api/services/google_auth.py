@@ -1,6 +1,9 @@
 import json
+import logging
 from google.oauth2.credentials import Credentials
 from .config import CREDENTIALS_PATH, TOKEN_PATH
+
+logger = logging.getLogger(__name__)
 
 SCOPES = [
     "https://www.googleapis.com/auth/drive.readonly",
@@ -14,15 +17,39 @@ def load_client_config():
     return cfg.get("client_id"), cfg.get("client_secret")
 
 def get_creds():
-    """Return valid Credentials or None."""
+    """Return valid Credentials or None. Never blocks on network."""
     if not TOKEN_PATH.exists():
         return None
-    creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), SCOPES)
+    try:
+        creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), SCOPES)
+    except Exception as e:
+        logger.warning("Failed to load token.json: %s", e)
+        return None
+
     if creds and creds.valid:
         return creds
+
+    # Token expired — try refresh with a short timeout
     if creds and creds.expired and creds.refresh_token:
-        from google.auth.transport.requests import Request
-        creds.refresh(Request())
-        TOKEN_PATH.write_text(creds.to_json())
-        return creds
+        try:
+            from google.auth.transport.requests import Request
+            import socket
+            old_timeout = socket.getdefaulttimeout()
+            socket.setdefaulttimeout(5)  # 5 second max — don't hang offline
+            try:
+                creds.refresh(Request())
+                TOKEN_PATH.write_text(creds.to_json())
+                return creds
+            finally:
+                socket.setdefaulttimeout(old_timeout)
+        except Exception as e:
+            logger.warning("Token refresh failed (offline?): %s", e)
+            # Return the expired creds anyway so we know the user WAS authenticated
+            # The caller can check creds.valid / creds.expired
+            return None
+
     return None
+
+def has_token():
+    """Check if a token file exists at all (user was previously authenticated)."""
+    return TOKEN_PATH.exists()

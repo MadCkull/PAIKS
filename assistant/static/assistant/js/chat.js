@@ -299,7 +299,7 @@ window.ragIngest = async function() {
   if (badge) { badge.className = "badge badge-dim"; badge.textContent = "Indexing…"; }
 
   try {
-    const res = await fetch(`${API_BASE}/rag/ingest`, { method: "POST" });
+    const res = await fetchWithTimeout(`${API_BASE}/rag/ingest`, { method: "POST", headers: { "X-CSRFToken": getCsrfToken() } }, 600000);
     const data = await res.json();
     if (data.error) { showToast(data.error, "error"); return; }
     showToast(`Indexed ${data.files_processed || 0} files · ${data.total_chunks || 0} chunks created`, "success");

@@ -1,6 +1,6 @@
 async function fetchAuthState() {
   try {
-    const res = await fetchWithTimeout(`${API_BASE}/auth/status`, {}, 10000); // 10s timeout
+    const res = await fetchWithTimeout(`${API_BASE}/auth/status`, {}, 5000);
     return await res.json();
   } catch {
     return { authenticated: false, user: null };
@@ -24,11 +24,15 @@ function getInitials(name) {
 function syncSidebarIdentity(connected, user) {
   const nameEl = document.getElementById("sidebar-user-name");
   if (!nameEl) return;
-  let displayName = "Guest";
+  const mode = localStorage.getItem("paiks-mode");
+
   if (connected && user) {
-    displayName = (user.display_name || user.email || "Guest").trim();
+    nameEl.textContent = (user.display_name || user.email || "Connected").trim();
+  } else if (mode === "local") {
+    nameEl.textContent = "Local User";
+  } else {
+    nameEl.textContent = "Guest";
   }
-  nameEl.textContent = displayName;
 }
 
 async function updateConnectionUI() {
@@ -45,14 +49,14 @@ async function updateConnectionUI() {
   const badgeEl = document.getElementById("drive-profile-badge");
   const driveTitle = document.getElementById("drive-link-title");
   if (driveTitle) driveTitle.textContent = "Google Drive";
-  
+
   if (subEl) {
     if (connected) {
       const email = (user.email || "").trim();
       const gname = (user.display_name || "").trim();
-      subEl.textContent = gname && email ? `${gname} · ${email}` : email || gname || "Linked to your account";
+      subEl.textContent = gname && email ? `${gname} · ${email}` : email || gname || "Linked";
     } else {
-      subEl.textContent = "Not linked — connect from Home";
+      subEl.textContent = localStorage.getItem("paiks-mode") === "local" ? "Local mode" : "Not linked";
     }
   }
   if (badgeEl) {
@@ -77,28 +81,3 @@ async function updateConnectionUI() {
 
   return connected;
 }
-
-window.connectDrive = async function() {
-  try {
-    const res = await fetch(`${API_BASE}/auth/url`);
-    const data = await res.json();
-    if (data.url) {
-      window.location.href = data.url;
-    } else {
-      showToast(data.error || "Could not get auth URL", "error");
-    }
-  } catch (err) {
-    showToast("Failed to connect: " + err.message, "error");
-  }
-};
-
-window.disconnectDrive = async function() {
-  try {
-    await fetch(`${API_BASE}/auth/disconnect`, { method: "POST" });
-    showToast("Google Drive disconnected", "info");
-    updateConnectionUI();
-    setTimeout(() => location.reload(), 800);
-  } catch (err) {
-    showToast("Disconnect failed: " + err.message, "error");
-  }
-};

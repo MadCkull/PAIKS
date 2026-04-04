@@ -7,32 +7,52 @@
     </div>
     <div class="modal-body">
 
+      <!-- Account -->
+      <p class="section-label" style="margin:0 0 12px;">Account</p>
+      <div id="settings-account-section" style="margin-bottom:20px;">
+        <!-- Populated by settings.js -->
+        <div style="padding:12px;color:var(--text-dim);font-size:.85rem;">Loading...</div>
+      </div>
+
+      <hr class="divider" />
+
       <p class="section-label" style="margin:0 0 12px;">Data Sources</p>
 
       <!-- Google Drive -->
-      <div class="source-card">
-        <div class="source-icon cloud">☁️</div>
+      <div class="source-card" id="card-cloud">
+        <div class="source-icon">☁️</div>
         <div class="source-info">
           <div class="source-name">Google Drive</div>
-          <div class="source-path" id="settings-drive-folder">Not connected</div>
-          <div class="source-status" id="settings-drive-status" style="color:var(--text-dim);">Not connected</div>
+          <div class="source-path" id="settings-drive-folder">Checking...</div>
+          <div class="source-status" id="settings-drive-status">
+            <span class="dot"></span> <span>Checking...</span>
+          </div>
+          <button class="source-action-btn" id="btn-cloud-action" onclick="connectDrive()">Connect</button>
         </div>
-        <div class="source-action" style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
-          <button class="btn btn-sm btn-outline" onclick="connectDrive()">Connect</button>
-          <button class="btn btn-sm btn-danger" id="btn-disconnect-settings" style="display:none;" onclick="disconnectDrive()">Disconnect</button>
+        <div class="source-toggle-wrapper">
+          <label class="switch">
+            <input type="checkbox" id="toggle-cloud" onchange="toggleSource('cloud', this.checked)">
+            <span class="slider"></span>
+          </label>
         </div>
       </div>
 
       <!-- Local Files -->
-      <div class="source-card">
-        <div class="source-icon local">💻</div>
+      <div class="source-card" id="card-local">
+        <div class="source-icon">💻</div>
         <div class="source-info">
           <div class="source-name">Local Files</div>
-          <div class="source-path">Sync via PAIKS local folder</div>
-          <div class="source-status" style="color:var(--color-success);">✓ Available</div>
+          <div class="source-path" id="settings-local-folder">No folder selected</div>
+          <div class="source-status" id="settings-local-status">
+            <span class="dot"></span> <span>Ready</span>
+          </div>
+          <button class="source-action-btn" onclick="openLocalFolderPicker()">Browse Folder</button>
         </div>
-        <div class="source-action">
-          <button class="btn btn-sm btn-outline" onclick="ragIngest()">⚡ Index</button>
+        <div class="source-toggle-wrapper">
+          <label class="switch">
+            <input type="checkbox" id="toggle-local" onchange="toggleSource('local', this.checked)">
+            <span class="slider"></span>
+          </label>
         </div>
       </div>
 
@@ -58,6 +78,35 @@
       </div>
       <button class="btn btn-primary w-100" onclick="saveLLMConfig()">Save Configuration</button>
 
+      <hr class="divider" />
+
+      <!-- Logout -->
+      <button class="btn btn-outline w-100" onclick="logoutPaiks()" style="color:var(--text-dim);border-color:var(--border-dim);margin-top:4px;">
+        🚪 Sign Out / Switch Account
+      </button>
+
+    </div>
+  </div>
+</div>
+
+<!-- ── LOCAL FOLDER PICKER MODAL ──────────────────────────────────────── -->
+<div id="local-picker-overlay" class="overlay hidden" style="z-index:10001;">
+  <div class="modal modal-md">
+    <div class="modal-header">
+      <h3>📁 Select Local Root Folder</h3>
+      <button class="btn-close btn-icon" onclick="closeModal('local-picker-overlay')">✕</button>
+    </div>
+    <div class="modal-body" style="padding:0;">
+      <div id="picker-breadcrumb" style="padding:12px 20px;background:rgba(255,255,255,0.03);border-bottom:1px solid var(--glass-border);font-size:0.85rem;color:var(--text-dim);font-family:monospace;">
+        This PC
+      </div>
+      <div id="picker-list" style="height:400px;overflow-y:auto;padding:10px;">
+        <!-- Items injected by JS -->
+      </div>
+    </div>
+    <div class="modal-footer" style="padding:16px 20px;border-top:1px solid var(--glass-border);display:flex;justify-content:flex-end;gap:12px;">
+      <button class="btn btn-outline btn-sm" onclick="closeModal('local-picker-overlay')">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="btn-confirm-picker" disabled onclick="confirmLocalPicker()">Select Folder</button>
     </div>
   </div>
 </div>

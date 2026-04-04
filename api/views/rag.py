@@ -4,12 +4,16 @@ from django.http import JsonResponse
 
 from api.services.google_auth import get_creds
 from api.services.google_drive import drive_service, MIME_FILTER
-from api.services.config import load_cache, load_folder_config, load_llm_config
+from api.services.config import load_cache, load_folder_config, load_llm_config, load_app_settings, LOCAL_ALLOWED_EXTENSIONS
 from api.services.chromadb_store import get_collection
-from api.services.text_extraction import extract_text_from_drive
+from api.services.text_extraction import extract_text_from_drive, extract_text_from_local
 from api.services.chunking import chunk_text
 from api.services.rag_pipeline import build_rag_prompt
 from api.services.llm_client import call_local_llm
+import os
+import pathlib
+import time
+from api.views.drive import refresh_local_stats
 
 logger = logging.getLogger(__name__)
 
@@ -34,49 +38,83 @@ def ingest(request):
     if _ingest_progress.get("running"):
         return JsonResponse({"error": "Ingest already running. Check /api/rag/status for progress."}, status=409)
 
-    creds = get_creds()
-    if not creds:
-        return JsonResponse({"error": "Not authenticated. Connect Google Drive first."}, status=401)
+    app_settings = load_app_settings()
+    cloud_enabled = app_settings.get("cloud_enabled", True)
+    local_enabled = app_settings.get("local_enabled", True)
+    local_root = app_settings.get("local_root_path")
 
-    cache = load_cache()
-    files = cache.get("files", [])
-    if not files:
-        return JsonResponse({"error": "No synced files found. Run Sync first, then try again."}, status=400)
+    files_to_process = []
 
-    service = drive_service(creds)
+    # ── Gather Cloud Files ──────────────────────────────────
+    if cloud_enabled:
+        creds = get_creds()
+        if creds:
+            cache = load_cache()
+            for f in cache.get("files", []):
+                files_to_process.append({
+                    "id": f.get("id"),
+                    "name": f.get("name"),
+                    "mime": f.get("mimeType"),
+                    "source": "google",
+                    "link": f.get("webViewLink", ""),
+                    "modified": f.get("modifiedTime", ""),
+                })
+
+    # ── Gather Local Files ──────────────────────────────────
+    if local_enabled and local_root and os.path.exists(local_root):
+        for root, dirs, filenames in os.walk(local_root):
+            for filename in filenames:
+                ext = pathlib.Path(filename).suffix.lower()
+                if ext in LOCAL_ALLOWED_EXTENSIONS:
+                    full_path = os.path.join(root, filename)
+                    files_to_process.append({
+                        "id": f"local__{full_path}",
+                        "name": filename,
+                        "mime": "text/plain" if ext == ".txt" else "application/octet-stream", # simpler mime
+                        "source": "local",
+                        "local_path": full_path,
+                        "modified": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(os.path.getmtime(full_path))),
+                    })
+
+    if not files_to_process:
+        return JsonResponse({"error": "No files found to process. Check your data source settings and run sync."}, status=400)
+
+    service = None
+    if cloud_enabled:
+        creds = get_creds()
+        if creds: service = drive_service(creds)
+
     col = get_collection()
-
-    _ingest_progress = {"running": True, "processed": 0, "total": len(files), "done": False, "error": None}
+    _ingest_progress = {"running": True, "processed": 0, "total": len(files_to_process), "done": False, "error": None}
 
     processed, skipped, errors = 0, 0, []
     total_chunks = 0
 
-    for f in files:
-        fid = f.get("id", "")
-        fname = f.get("name", "untitled")
-        mime = f.get("mimeType", "")
+    for f in files_to_process:
+        fid = f["id"]
+        fname = f["name"]
+        mime = f["mime"]
+        source = f["source"]
 
-        text = extract_text_from_drive(service, fid, mime)
+        try:
+            if source == "google" and service:
+                text = extract_text_from_drive(service, fid, mime)
+            elif source == "local":
+                text = extract_text_from_local(pathlib.Path(f["local_path"]))
+            else:
+                text = None
+        except Exception as e:
+            text = None
+            logger.error("Extraction error for %s: %s", fname, e)
+
         if not text or not text.strip():
-            logger.warning("Skipped '%s' (id=%s, mime=%s) — empty or no text extracted", fname, fid, mime)
             skipped += 1
-            errors.append(f"{fname}: empty text (mime={mime})")
-            _ingest_progress["processed"] += 1
-            continue
-
-        printable_ratio = sum(1 for c in text[:500] if c.isprintable() or c in '\n\r\t') / max(len(text[:500]), 1)
-        if printable_ratio < 0.85:
-            logger.warning("Skipped '%s' — text appears to be binary (%.0f%% printable)", fname, printable_ratio * 100)
-            skipped += 1
-            errors.append(f"{fname}: binary content ({printable_ratio*100:.0f}% printable)")
             _ingest_progress["processed"] += 1
             continue
 
         chunks = chunk_text(text)
         if not chunks:
-            logger.warning("Skipped '%s' — text too short to chunk", fname)
             skipped += 1
-            errors.append(f"{fname}: too short to chunk")
             _ingest_progress["processed"] += 1
             continue
 
@@ -86,8 +124,10 @@ def ingest(request):
                 "file_id": fid,
                 "file_name": fname,
                 "mime_type": mime,
-                "web_view_link": f.get("webViewLink", ""),
-                "modified_time": f.get("modifiedTime", ""),
+                "source": source,
+                "web_view_link": f.get("link", ""),
+                "local_path": f.get("local_path", ""),
+                "modified_time": f.get("modified", ""),
                 "chunk_index": i,
             }
             for i in range(len(chunks))
@@ -104,6 +144,12 @@ def ingest(request):
         _ingest_progress["processed"] += 1
 
     _ingest_progress.update({"running": False, "done": True})
+
+    # Update local stats cache so stats() endpoint is instant
+    try:
+        refresh_local_stats()
+    except Exception:
+        pass
 
     return JsonResponse({
         "status": "ingested",
@@ -123,7 +169,7 @@ def search(request):
     if not query:
         return JsonResponse({"error": "query is required"}, status=400)
 
-    folder_cfg = load_folder_config()
+    app_settings = load_app_settings()
     llm_cfg = load_llm_config()
 
     try:
@@ -167,7 +213,9 @@ def search(request):
                         "modifiedTime": meta.get("modified_time", ""),
                         "snippet": doc[:320].strip(),
                         "score": score,
-                        "relevance_hint": f"Semantic match · {round(score * 100)}% relevance",
+                        "source": meta.get("source", "google"),
+                        "localPath": meta.get("local_path", ""),
+                        "relevance_hint": f"{'Semantic match' if meta.get('source') == 'google' else 'Local match'} · {round(score * 100)}% relevance",
                     }
 
             hits = sorted(seen.values(), key=lambda x: x["score"], reverse=True)
@@ -194,7 +242,7 @@ def search(request):
                 "total": len(hits),
                 "source": "semantic",
                 "indexed": True,
-                "folder": folder_cfg,
+                "settings": app_settings,
             })
     except Exception as exc:
         import traceback
@@ -208,7 +256,7 @@ def search(request):
             "total": 0,
             "source": "error",
             "indexed": True,
-            "folder": folder_cfg,
+            "settings": app_settings,
         })
 
     creds = get_creds()

@@ -1,15 +1,54 @@
-import json
-import logging
+import os
 import pathlib
 import time
+import logging
 from django.http import JsonResponse
 
-from api.services.config import local_files_meta, local_files_meta_save, LOCAL_FILES_PATH, LOCAL_ALLOWED_EXTENSIONS
+from api.services.config import local_files_meta, local_files_meta_save, LOCAL_FILES_PATH, LOCAL_ALLOWED_EXTENSIONS, load_app_settings
 from api.services.text_extraction import extract_text_from_local
 from api.services.chunking import chunk_text
 from api.services.chromadb_store import get_collection
 
 logger = logging.getLogger(__name__)
+
+def get_tree(request):
+    settings = load_app_settings()
+    root_path = settings.get("local_root_path")
+    if not root_path or not os.path.exists(root_path):
+        return JsonResponse({"error": "Local root path not set or invalid"}, status=400)
+
+    def build_tree(current_path, depth=0):
+        if depth > 5: # Reasonable limit for initial release
+             return None
+        
+        name = os.path.basename(current_path) or current_path
+        tree = {"name": name, "path": current_path, "type": "dir", "children": []}
+        
+        try:
+            with os.scandir(current_path) as entries:
+                for entry in entries:
+                    if entry.is_dir():
+                        subdir = build_tree(entry.path, depth + 1)
+                        if subdir: tree["children"].append(subdir)
+                    else:
+                        ext = pathlib.Path(entry.name).suffix.lower()
+                        if ext in LOCAL_ALLOWED_EXTENSIONS:
+                            tree["children"].append({
+                                "name": entry.name,
+                                "path": entry.path,
+                                "type": "file",
+                                "size": entry.stat().st_size
+                            })
+        except (PermissionError, OSError):
+            pass
+            
+        return tree
+
+    try:
+        tree_data = build_tree(root_path)
+        return JsonResponse(tree_data)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
 
 def list_files(request):
     return JsonResponse({"files": local_files_meta()})

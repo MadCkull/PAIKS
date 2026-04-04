@@ -27,33 +27,8 @@
           <!-- Cloud Tree — populated by JS -->
           <div class="tree-view" id="tree-cloud"></div>
 
-          <!-- Local Panel — upload zone + file list -->
-          <div id="tree-local" style="display:none;flex-direction:column;gap:12px;padding:12px;">
-
-            <!-- Upload drop zone -->
-            <div id="local-drop-zone" class="local-drop-zone">
-              <input type="file" id="local-file-input" multiple
-                accept=".txt,.md,.csv,.docx,.pdf" style="display:none;" />
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                <polyline points="17 8 12 3 7 8"/>
-                <line x1="12" y1="3" x2="12" y2="15"/>
-              </svg>
-              <p class="drop-label">Drop files here or <span class="drop-link" onclick="document.getElementById('local-file-input').click()">browse</span></p>
-              <p class="drop-hint">Supports .txt · .md · .csv · .docx · .pdf</p>
-            </div>
-
-            <!-- Upload progress -->
-            <div id="local-upload-progress" style="display:none;">
-              <div class="upload-progress-bar"><div id="local-upload-bar" class="upload-progress-fill"></div></div>
-              <p id="local-upload-label" style="font-size:.78rem;color:var(--text-dim);margin-top:6px;text-align:center;"></p>
-            </div>
-
-            <!-- Indexed local files list -->
-            <div id="local-file-list"></div>
-
-          </div>
+          <!-- Local Tree — populated by JS -->
+          <div class="tree-view" id="tree-local" style="display:none;"></div>
         </div>
 
         <!-- Sync Console -->

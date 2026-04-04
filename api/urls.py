@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import health, auth, drive, search, rag, llm, local_files
+from .views import health, auth, drive, search, rag, llm, local_files, system
 
 urlpatterns = [
     # Health
@@ -16,6 +16,9 @@ urlpatterns = [
     path("drive/stats",         drive.stats),
     path("drive/set-folder",    drive.set_folder),
     path("drive/folder-config", drive.folder_config),
+    # System
+    path("system/settings",      system.settings_view),
+    path("system/browse",        system.browse_local),
     # Search
     path("search",              search.search),
     # RAG
@@ -26,6 +29,7 @@ urlpatterns = [
     path("rag/llm/config",      llm.config),
     # Local files
     path("local/files",         local_files.list_files),
+    path("local/tree",          local_files.get_tree),
     path("local/upload",        local_files.upload),
     path("local/delete",        local_files.delete),
 ]

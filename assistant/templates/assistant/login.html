@@ -6,53 +6,34 @@
     <meta charset="UTF-8" />
     <title>Sign In · PAIKS</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Sign in to access your Google Drive AI Assistant." />
+    <meta name="description" content="Sign in to access your AI Assistant." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono&display=swap"
         rel="stylesheet" />
-    <!-- Load variables and animations for standard theme support -->
     <link rel="stylesheet" href="{% static 'assistant/css/variables.css' %}" />
     <link rel="stylesheet" href="{% static 'assistant/css/animations.css' %}" />
     <style>
-        /* ---------- Full-page immersive layout ---------- */
         body {
-            margin: 0;
-            padding: 0;
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-family: var(--font);
-            color: var(--text-primary);
-            overflow: hidden;
-            background: var(--bg-app);
-            position: relative;
+            margin: 0; padding: 0; min-height: 100vh;
+            display: flex; align-items: center; justify-content: center;
+            font-family: var(--font, 'Inter', system-ui, sans-serif);
+            color: var(--text-primary); overflow: hidden;
+            background: var(--bg-app); position: relative;
         }
 
-        /* Animated glowing background blobs */
         .ambient-glow {
-            position: absolute;
-            width: 600px;
-            height: 600px;
+            position: absolute; width: 600px; height: 600px;
             background: radial-gradient(circle, var(--accent-glow) 0%, transparent 60%);
-            border-radius: 50%;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 0;
+            border-radius: 50%; top: 50%; left: 50%;
+            transform: translate(-50%, -50%); z-index: 0;
             animation: pulse-glow 8s ease-in-out infinite alternate;
             pointer-events: none;
         }
         .ambient-glow-2 {
-            position: absolute;
-            width: 400px;
-            height: 400px;
+            position: absolute; width: 400px; height: 400px;
             background: radial-gradient(circle, rgba(96, 165, 250, 0.15) 0%, transparent 60%);
-            border-radius: 50%;
-            top: 20%;
-            left: 30%;
-            z-index: 0;
+            border-radius: 50%; top: 20%; left: 30%; z-index: 0;
             animation: float 10s ease-in-out infinite alternate;
             pointer-events: none;
         }
@@ -66,22 +47,16 @@
             100% { transform: translate(30px, -40px); }
         }
 
-        /* ---------- Glassmorphic Login Card ---------- */
         .login-card {
-            position: relative;
-            z-index: 10;
-            width: 100%;
-            max-width: 420px;
+            position: relative; z-index: 10; width: 100%; max-width: 420px;
             background: var(--glass-bg);
             border: 1px solid var(--glass-border-light);
             border-radius: var(--radius-xl);
             padding: 48px 40px;
             box-shadow: 0 24px 64px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(32px);
-            -webkit-backdrop-filter: blur(32px);
+            backdrop-filter: blur(32px); -webkit-backdrop-filter: blur(32px);
             text-align: center;
-            opacity: 0;
-            transform: translateY(20px);
+            opacity: 0; transform: translateY(20px);
             animation: slideUpFade 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
 
@@ -89,117 +64,88 @@
             to { opacity: 1; transform: translateY(0); }
         }
 
-        /* ---------- Brand ---------- */
         .login-brand {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 14px;
-            margin-bottom: 12px;
-            font-size: 2rem;
-            font-weight: 800;
-            letter-spacing: -0.04em;
+            display: flex; align-items: center; justify-content: center;
+            gap: 14px; margin-bottom: 12px;
+            font-size: 2rem; font-weight: 800; letter-spacing: -0.04em;
         }
 
         .login-brand .logo-icon {
-            width: 54px;
-            height: 54px;
-            border-radius: 16px;
+            width: 54px; height: 54px; border-radius: 16px;
             background: linear-gradient(135deg, var(--accent), #a855f7);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.8rem;
-            color: #fff;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.8rem; color: #fff;
             box-shadow: 0 8px 32px var(--accent-glow), inset 0 2px 4px rgba(255, 255, 255, 0.3);
             text-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
 
         .login-subtitle {
-            font-size: 1rem;
-            color: var(--text-secondary);
-            margin-bottom: 40px;
-            line-height: 1.6;
+            font-size: 1rem; color: var(--text-secondary);
+            margin-bottom: 40px; line-height: 1.6;
         }
 
-        /* ---------- Google Push Button ---------- */
-        .btn-google {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-            width: 100%;
-            padding: 14px;
-            border-radius: var(--radius-md);
-            background: var(--bg-card);
-            border: 1px solid var(--border-dim);
-            color: var(--text-primary);
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-            position: relative;
-            overflow: hidden;
-            text-decoration: none;
+        .btn-login {
+            display: flex; align-items: center; justify-content: center; gap: 12px;
+            width: 100%; padding: 14px; border-radius: var(--radius-md);
+            background: var(--bg-card); border: 1px solid var(--border-dim);
+            color: var(--text-primary); font-size: 1rem; font-weight: 600;
+            cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            position: relative; overflow: hidden; text-decoration: none;
             box-sizing: border-box;
         }
 
-        .btn-google:hover {
+        .btn-login:hover {
             border-color: var(--accent);
             background: var(--glass-bg-hover);
             transform: translateY(-2px);
             box-shadow: 0 8px 24px var(--accent-glow);
         }
+        .btn-login:active { transform: translateY(0); }
+        .btn-login svg { width: 20px; height: 20px; flex-shrink: 0; }
 
-        .btn-google:active {
-            transform: translateY(0);
+        .btn-local {
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+            width: 100%; padding: 13px; border-radius: var(--radius-md);
+            background: transparent; border: 1px solid var(--border-dim);
+            color: var(--text-primary); font-size: 0.95rem; font-weight: 500;
+            cursor: pointer; transition: all 0.2s ease;
+            box-sizing: border-box;
+        }
+        .btn-local:hover {
+            border-color: var(--text-secondary);
+            background: rgba(255,255,255,0.04);
+            transform: translateY(-1px);
+        }
+        .btn-local .local-icon {
+            font-size: 1.2rem;
         }
 
-        .btn-google svg {
-            width: 20px;
-            height: 20px;
-            flex-shrink: 0;
-        }
-
-        /* Decorative separator */
         .divider {
-            display: flex;
-            align-items: center;
-            margin: 32px 0;
-            color: var(--text-dim);
-            font-size: 0.8rem;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
+            display: flex; align-items: center; margin: 28px 0;
+            color: var(--text-dim); font-size: 0.8rem;
+            text-transform: uppercase; letter-spacing: 0.1em;
         }
         .divider::before, .divider::after {
-            content: '';
-            flex: 1;
-            height: 1px;
-            background: var(--glass-border);
+            content: ''; flex: 1; height: 1px; background: var(--glass-border);
         }
         .divider::before { margin-right: 16px; }
         .divider::after { margin-left: 16px; }
 
         .secure-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            color: var(--color-success);
-            font-size: 0.8rem;
-            font-weight: 500;
-            margin-top: 24px;
-            opacity: 0.8;
+            display: inline-flex; align-items: center; gap: 6px;
+            color: var(--color-success); font-size: 0.8rem; font-weight: 500;
+            margin-top: 24px; opacity: 0.8;
         }
-        
-        .secure-badge svg {
-            width: 14px;
-            height: 14px;
+        .secure-badge svg { width: 14px; height: 14px; }
+
+        .local-note {
+            font-size: 0.75rem; color: var(--text-dim);
+            margin-top: 8px; line-height: 1.4;
         }
     </style>
 </head>
 
 <body>
-    <!-- Immersive Background glow -->
     <div class="ambient-glow"></div>
     <div class="ambient-glow-2"></div>
 
@@ -210,8 +156,7 @@
         </div>
         <p class="login-subtitle">Your intelligent AI workspace for seamless document indexing and retrieval.</p>
 
-        <a href="#" class="btn-google" id="btn-login" onclick="initiateLogin(event)">
-            <!-- Custom Google G Logo -->
+        <a href="#" class="btn-login" id="btn-login" onclick="initiateLogin(event)">
             <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
                 <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
@@ -223,19 +168,31 @@
 
         <div class="divider">Or</div>
 
-        <button class="btn btn-outline" style="width:100%;" onclick="alert('Access limited to local files. Please sign in for full features.')">Continue as Guest (Local Only)</button>
+        <button class="btn-local" id="btn-local" onclick="useLocally()">
+            <span class="local-icon">💻</span>
+            Use Locally
+        </button>
+        <p class="local-note">No internet required. Use local files only.<br>You can connect Google Drive later from Settings.</p>
 
         <div class="secure-badge">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                 <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
             </svg>
-            End-to-End Secure
+            All data stays on your machine
         </div>
     </div>
 
-    <!-- Login Logic -->
     <script>
+        // Check if user already has a mode set
+        (function() {
+            const mode = localStorage.getItem('paiks-mode');
+            if (mode === 'local' || mode === 'drive') {
+                // Already chosen — go straight to app
+                window.location.href = '/';
+            }
+        })();
+
         async function initiateLogin(e) {
             e.preventDefault();
             const btn = document.getElementById('btn-login');
@@ -243,22 +200,26 @@
             btn.style.pointerEvents = 'none';
 
             try {
-                // Adjust to the right API endpoint if needed.
                 const response = await fetch('/api/auth/url');
                 const data = await response.json();
                 if (data.url) {
+                    localStorage.setItem('paiks-mode', 'drive');
                     window.location.href = data.url;
                 } else {
-                    alert('Error initiating login: ' + (data.error || 'Unknown error'));
+                    alert('Error: ' + (data.error || 'Unknown error'));
                     btn.innerHTML = 'Continue with Google Drive';
                     btn.style.pointerEvents = 'auto';
                 }
             } catch (err) {
-                console.error('Login error:', err);
                 alert('Connection failed. Please ensure the backend is running.');
                 btn.innerHTML = 'Continue with Google Drive';
                 btn.style.pointerEvents = 'auto';
             }
+        }
+
+        function useLocally() {
+            localStorage.setItem('paiks-mode', 'local');
+            window.location.href = '/';
         }
     </script>
 </body>
