@@ -1,9 +1,10 @@
 from django.urls import path
-from .views import health, auth, drive, search, rag, llm, local_files, system
+from .views import health, auth, drive, search, rag, llm, local_files, system, events
 
 urlpatterns = [
-    # Health
-    path("health",              health.check),
+    # ── Health & System ──
+    path('health', health.check),
+    path('events/status', events.event_stream),
     # Auth
     path("auth/status",         auth.status),
     path("auth/url",            auth.get_url),
@@ -14,6 +15,7 @@ urlpatterns = [
     path("drive/folders",       drive.folders),
     path("drive/sync",          drive.sync),
     path("drive/stats",         drive.stats),
+    path("drive/selection",     drive.selection),
     path("drive/set-folder",    drive.set_folder),
     path("drive/folder-config", drive.folder_config),
     # System

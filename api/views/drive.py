@@ -11,6 +11,7 @@ from api.services.config import (
 )
 import os
 import pathlib
+from django.db.models import Count, Sum
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,43 @@ def set_folder(request):
 
 def folder_config(request):
     return JsonResponse(load_folder_config() or {})
+
+def selection(request):
+    try:
+        payload = json.loads(request.body)
+        file_ids = payload.get("file_ids", [])
+        is_selected = payload.get("is_selected", True)
+        
+        from api.models import DocumentTrack
+        from api.services.sync_manager import _index_queue
+        
+        for fid in file_ids:
+            doc, created = DocumentTrack.objects.get_or_create(
+                file_id=fid,
+                defaults={
+                    "name": fid.split("__")[-1] if "__" in fid else fid,
+                    "source": "cloud" if fid.startswith("cloud__") else "local",
+                    "sync_status": "pending" if is_selected else "disabled",
+                    "is_selected": is_selected
+                }
+            )
+            if not created:
+                doc.is_selected = is_selected
+                if is_selected and doc.sync_status in ['disabled', 'error', 'pending']:
+                    doc.sync_status = "pending"
+                elif not is_selected:
+                    doc.sync_status = "disabled"
+                doc.save()
+            
+            if is_selected and doc.sync_status == "pending":
+                _index_queue.put({"action": "index", "doc_id": doc.id})
+            elif not is_selected:
+                _index_queue.put({"action": "delete", "file_id": fid})
+                
+        return JsonResponse({"status": "updated", "count": len(file_ids)})
+    except Exception as e:
+        logger.error(f"Selection update error: {e}")
+        return JsonResponse({"error": str(e)}, status=400)
 
 def files(request):
     creds = get_creds()
@@ -189,32 +227,21 @@ def refresh_local_stats():
     return stats_cache
 
 def stats(request):
-    """Lightweight stats endpoint — reads from caches only, no network or filesystem scans."""
+    """Realtime stats endpoint — reads directly from DocumentTrack SQLite registry."""
     creds = get_creds()
-    cache = load_cache()
     app_settings = load_app_settings()
+    from api.models import DocumentTrack
 
-    # ── CLOUD STATS (from sync cache) ────────────────────────
-    cloud_files = cache.get("files", [])
-    cloud_total = len(cloud_files)
-    cloud_size = 0
-    for f in cloud_files:
-        s = f.get("size")
-        if s and str(s).isdigit():
-            cloud_size += int(s)
+    # Total files recognized by system (even if disabled)
+    cloud_total = DocumentTrack.objects.filter(source="cloud").count()
+    local_total = DocumentTrack.objects.filter(source="local").count()
 
-    file_types = {}
-    for f in cloud_files:
-        mime = f.get("mimeType", "unknown")
-        ext = mime.split("/")[-1].split(".")[-1]
-        file_types[ext] = file_types.get(ext, 0) + 1
-
-    # ── LOCAL STATS (from cache file, NOT live scan) ─────────
-    local_stats = load_local_stats_cache()
-    local_total = local_stats.get("total", 0)
-    local_size = local_stats.get("size", 0)
-    for ext, count in local_stats.get("file_types", {}).items():
-        file_types[ext] = file_types.get(ext, 0) + count
+    # Active indexed files
+    indexed_total = DocumentTrack.objects.filter(sync_status="synced").count()
+    syncing_total = DocumentTrack.objects.filter(sync_status="syncing").count()
+    pending_total = DocumentTrack.objects.filter(sync_status="pending").count()
+    disabled_total = DocumentTrack.objects.filter(sync_status="disabled").count()
+    error_total = DocumentTrack.objects.filter(sync_status="error").count()
 
     return JsonResponse({
         "authenticated": creds is not None,
@@ -223,9 +250,11 @@ def stats(request):
         "cloud_total": cloud_total,
         "local_total": local_total,
         "documents_total": cloud_total + local_total,
-        "total_size_bytes": cloud_size + local_size,
-        "synced_at": cache.get("synced_at", "Not synced yet"),
-        "file_types": file_types,
+        "indexed_total": indexed_total,
+        "syncing_total": syncing_total,
+        "pending_total": pending_total,
+        "disabled_total": disabled_total,
+        "error_total": error_total,
         "folder": load_folder_config(),
         "local_root": app_settings.get("local_root_path")
     })
