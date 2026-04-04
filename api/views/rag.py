@@ -1,36 +1,52 @@
 import json
 import logging
-from django.http import JsonResponse
-
-from api.services.google_auth import get_creds
-from api.services.google_drive import drive_service, MIME_FILTER
-from api.services.config import load_cache, load_folder_config, load_llm_config, load_app_settings, LOCAL_ALLOWED_EXTENSIONS
-from api.services.chromadb_store import get_collection
-from api.services.text_extraction import extract_text_from_drive, extract_text_from_local
-from api.services.chunking import chunk_text
-from api.services.rag_pipeline import build_rag_prompt
-from api.services.llm_client import call_local_llm
 import os
 import pathlib
 import time
+from django.http import JsonResponse
+
+from api.services.google_auth import get_creds
+from api.services.google_drive import drive_service
+from api.services.config import load_cache, load_app_settings, LOCAL_ALLOWED_EXTENSIONS
 from api.views.drive import refresh_local_stats
+
+# --- NEW RAG ARCHITECTURE IMPORTS ---
+from api.services.rag.indexer import get_vector_store, CLOUD_COLLECTION, LOCAL_COLLECTION
+from api.services.rag.ingestion.parsers import parse_cloud_file, parse_local_file
+from api.services.rag.ingestion.chunking import chunk_documents
+from api.services.rag.ingestion.pipeline import ingest_nodes_to_collection
+from api.services.rag.retrieval.hybrid import get_base_retriever, get_hybrid_merging_retriever
+from api.services.rag.retrieval.reranker import get_cross_encoder_reranker
+from api.services.rag.generation.engine import build_query_engine
+from api.services.rag.ingestion.embedder import get_embedder
+
+from llama_index.core import VectorStoreIndex, QueryBundle
+from llama_index.core.retrievers import BaseRetriever
 
 logger = logging.getLogger(__name__)
 
 _ingest_progress: dict = {"running": False, "processed": 0, "total": 0, "done": False, "error": None}
 
 def status(request):
+    """
+    Returns the status of the Qdrant DB points.
+    """
     try:
-        col = get_collection()
-        count = col.count()
+        from api.services.rag.indexer import get_qdrant_client
+        client = get_qdrant_client()
+        local_count = client.get_collection(LOCAL_COLLECTION).points_count if client.collection_exists(LOCAL_COLLECTION) else 0
+        cloud_count = client.get_collection(CLOUD_COLLECTION).points_count if client.collection_exists(CLOUD_COLLECTION) else 0
+        total_chunks = local_count + cloud_count
         return JsonResponse({
-            "indexed": count > 0,
-            "total_chunks": count,
+            "indexed": total_chunks > 0,
+            "total_chunks": total_chunks,
             "ingest_running": _ingest_progress["running"],
             "ingest_progress": _ingest_progress,
         })
-    except Exception:
+    except Exception as e:
+        logger.warning(f"RAG status check failed: {e}")
         return JsonResponse({"indexed": False, "total_chunks": 0, "ingest_running": False})
+
 
 def ingest(request):
     global _ingest_progress
@@ -43,19 +59,20 @@ def ingest(request):
     local_enabled = app_settings.get("local_enabled", True)
     local_root = app_settings.get("local_root_path")
 
-    files_to_process = []
+    cloud_docs = []
+    local_docs = []
 
     # ── Gather Cloud Files ──────────────────────────────────
     if cloud_enabled:
         creds = get_creds()
         if creds:
-            cache = load_cache()
-            for f in cache.get("files", []):
-                files_to_process.append({
+             service = drive_service(creds)
+             cache = load_cache()
+             for f in cache.get("files", []):
+                cloud_docs.append({
                     "id": f.get("id"),
                     "name": f.get("name"),
                     "mime": f.get("mimeType"),
-                    "source": "google",
                     "link": f.get("webViewLink", ""),
                     "modified": f.get("modifiedTime", ""),
                 })
@@ -67,97 +84,94 @@ def ingest(request):
                 ext = pathlib.Path(filename).suffix.lower()
                 if ext in LOCAL_ALLOWED_EXTENSIONS:
                     full_path = os.path.join(root, filename)
-                    files_to_process.append({
+                    local_docs.append({
                         "id": f"local__{full_path}",
                         "name": filename,
-                        "mime": "text/plain" if ext == ".txt" else "application/octet-stream", # simpler mime
-                        "source": "local",
                         "local_path": full_path,
                         "modified": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(os.path.getmtime(full_path))),
                     })
 
-    if not files_to_process:
-        return JsonResponse({"error": "No files found to process. Check your data source settings and run sync."}, status=400)
+    if not cloud_docs and not local_docs:
+        return JsonResponse({"error": "No files found to process."}, status=400)
 
-    service = None
-    if cloud_enabled:
-        creds = get_creds()
-        if creds: service = drive_service(creds)
+    total_files = len(cloud_docs) + len(local_docs)
+    _ingest_progress = {"running": True, "processed": 0, "total": total_files, "done": False, "error": None}
 
-    col = get_collection()
-    _ingest_progress = {"running": True, "processed": 0, "total": len(files_to_process), "done": False, "error": None}
+    processed, skipped, total_chunks = 0, 0, 0
+    errors = []
 
-    processed, skipped, errors = 0, 0, []
-    total_chunks = 0
-
-    for f in files_to_process:
-        fid = f["id"]
-        fname = f["name"]
-        mime = f["mime"]
-        source = f["source"]
-
-        try:
-            if source == "google" and service:
-                text = extract_text_from_drive(service, fid, mime)
-            elif source == "local":
-                text = extract_text_from_local(pathlib.Path(f["local_path"]))
+    # ── Process Cloud Collection ────────────────────────────
+    if cloud_docs:
+        service = drive_service(get_creds())
+        parsed_docs = []
+        for f in cloud_docs:
+            doc = parse_cloud_file(service, f)
+            if doc:
+                parsed_docs.append(doc)
             else:
-                text = None
-        except Exception as e:
-            text = None
-            logger.error("Extraction error for %s: %s", fname, e)
-
-        if not text or not text.strip():
-            skipped += 1
-            _ingest_progress["processed"] += 1
-            continue
-
-        chunks = chunk_text(text)
-        if not chunks:
-            skipped += 1
-            _ingest_progress["processed"] += 1
-            continue
-
-        ids = [f"{fid}__chunk__{i}" for i in range(len(chunks))]
-        metadatas = [
-            {
-                "file_id": fid,
-                "file_name": fname,
-                "mime_type": mime,
-                "source": source,
-                "web_view_link": f.get("link", ""),
-                "local_path": f.get("local_path", ""),
-                "modified_time": f.get("modified", ""),
-                "chunk_index": i,
-            }
-            for i in range(len(chunks))
-        ]
-
-        try:
-            col.upsert(ids=ids, documents=chunks, metadatas=metadatas)
+                skipped += 1
             processed += 1
-            total_chunks += len(chunks)
-        except Exception as exc:
-            errors.append({"file": fname, "error": str(exc)})
-            logger.error("Chroma upsert failed for %s: %s", fname, exc)
+            _ingest_progress["processed"] = processed
 
-        _ingest_progress["processed"] += 1
+        if parsed_docs:
+            try:
+                nodes = chunk_documents(parsed_docs)
+                total_chunks += len(nodes)
+                ingest_nodes_to_collection(nodes, CLOUD_COLLECTION)
+            except Exception as e:
+                logger.error(f"Cloud ingestion failed: {e}")
+                errors.append(str(e))
+
+    # ── Process Local Collection ────────────────────────────
+    if local_docs:
+        parsed_docs = []
+        for f in local_docs:
+            doc = parse_local_file(f)
+            if doc:
+                parsed_docs.append(doc)
+            else:
+                skipped += 1
+            processed += 1
+            _ingest_progress["processed"] = processed
+
+        if parsed_docs:
+            try:
+                nodes = chunk_documents(parsed_docs)
+                total_chunks += len(nodes)
+                ingest_nodes_to_collection(nodes, LOCAL_COLLECTION)
+            except Exception as e:
+                logger.error(f"Local ingestion failed: {e}")
+                errors.append(str(e))
 
     _ingest_progress.update({"running": False, "done": True})
 
-    # Update local stats cache so stats() endpoint is instant
-    try:
-        refresh_local_stats()
-    except Exception:
-        pass
+    try: refresh_local_stats()
+    except Exception: pass
 
     return JsonResponse({
         "status": "ingested",
-        "files_processed": processed,
+        "files_processed": processed - skipped,
         "files_skipped": skipped,
         "total_chunks": total_chunks,
         "errors": errors[:10],
     })
+
+# --- Custom Multi-Collection Retriever ---
+class MultiCollectionRetriever(BaseRetriever):
+    def __init__(self, cloud_retriever, local_retriever):
+        self.cloud_retriever = cloud_retriever
+        self.local_retriever = local_retriever
+        super().__init__()
+
+    def _retrieve(self, query_bundle: QueryBundle):
+        nodes = []
+        if self.cloud_retriever:
+            try: nodes.extend(self.cloud_retriever.retrieve(query_bundle))
+            except Exception: pass
+        if self.local_retriever:
+            try: nodes.extend(self.local_retriever.retrieve(query_bundle))
+            except Exception: pass
+        return nodes
 
 def search(request):
     try:
@@ -170,87 +184,82 @@ def search(request):
         return JsonResponse({"error": "query is required"}, status=400)
 
     app_settings = load_app_settings()
-    llm_cfg = load_llm_config()
+    cloud_enabled = app_settings.get("cloud_enabled", True)
+    local_enabled = app_settings.get("local_enabled", True)
 
     try:
-        col = get_collection()
-        if col.count() > 0:
-            n_retrieve = min(10, col.count())
-            raw = col.query(
-                query_texts=[query],
-                n_results=n_retrieve,
-                include=["documents", "metadatas", "distances"],
-            )
+        cloud_retriever = None
+        local_retriever = None
+        
+        # Build individual hybrid retrievers if collections exist
+        from api.services.rag.indexer import get_qdrant_client
+        from llama_index.core.storage.docstore import SimpleDocumentStore
+        from llama_index.core.storage import StorageContext
+        
+        client = get_qdrant_client()
+        embedder = get_embedder()
 
-            MAX_CONTEXT_CHARS = 2000
-            llm_chunks: list[dict] = []
-            total_chars = 0
-            
-            for doc, meta, dist in zip(
-                raw["documents"][0][:5],
-                raw["metadatas"][0][:5],
-                raw["distances"][0][:5],
-            ):
-                if total_chars + len(doc) > MAX_CONTEXT_CHARS:
-                    break
-                llm_chunks.append({"name": meta["file_name"], "text": doc})
-                total_chars += len(doc)
+        if cloud_enabled and client.collection_exists(CLOUD_COLLECTION):
+            idx = VectorStoreIndex.from_vector_store(get_vector_store(CLOUD_COLLECTION), embed_model=embedder)
+            base_ret = get_base_retriever(idx, top_k=20)
+            cloud_retriever = base_ret # Using base since we skipped persisting complex docstore for multi-tenant simplicity in MVP
 
-            seen = {}
-            for doc, meta, dist in zip(
-                raw["documents"][0],
-                raw["metadatas"][0],
-                raw["distances"][0],
-            ):
-                fid = meta.get("file_id") or meta.get("file_name", "unknown")
-                score = round(1.0 - float(dist), 3)
-                if fid not in seen or score > seen[fid]["score"]:
-                    seen[fid] = {
-                        "id": fid,
-                        "name": meta.get("file_name", "Unknown"),
-                        "mimeType": meta.get("mime_type", ""),
-                        "webViewLink": meta.get("web_view_link", ""),
-                        "modifiedTime": meta.get("modified_time", ""),
-                        "snippet": doc[:320].strip(),
-                        "score": score,
-                        "source": meta.get("source", "google"),
-                        "localPath": meta.get("local_path", ""),
-                        "relevance_hint": f"{'Semantic match' if meta.get('source') == 'google' else 'Local match'} · {round(score * 100)}% relevance",
-                    }
+        if local_enabled and client.collection_exists(LOCAL_COLLECTION):
+            idx = VectorStoreIndex.from_vector_store(get_vector_store(LOCAL_COLLECTION), embed_model=embedder)
+            base_ret = get_base_retriever(idx, top_k=20)
+            local_retriever = base_ret
 
-            hits = sorted(seen.values(), key=lambda x: x["score"], reverse=True)
+        multi_retriever = MultiCollectionRetriever(cloud_retriever, local_retriever)
+        reranker = get_cross_encoder_reranker(top_n=5)
+        
+        engine = build_query_engine(multi_retriever, reranker)
+        
+        logger.info(f"Querying new engine: {query}")
+        response = engine.query(query)
+        
+        # Parse Source Nodes for frontend
+        hits = []
+        seen_fids = set()
+        
+        for node in response.source_nodes:
+            meta = node.node.metadata
+            fid = meta.get("file_id") or meta.get("file_name", "unknown")
+            if fid not in seen_fids:
+                seen_fids.add(fid)
+                score = round(node.score if node.score else 0.0, 3)
+                source_type = meta.get("source", "google")
+                hits.append({
+                    "id": fid,
+                    "name": meta.get("file_name", "Unknown"),
+                    "mimeType": meta.get("mime_type", ""),
+                    "webViewLink": meta.get("web_view_link", ""),
+                    "modifiedTime": meta.get("modified_time", ""),
+                    "snippet": node.node.get_content()[:320].strip(),
+                    "score": score,
+                    "source": source_type,
+                    "localPath": meta.get("local_path", ""),
+                    "relevance_hint": f"{'Cloud Match' if source_type == 'cloud' else 'Local Match'} · Reranked Score: {score}",
+                })
 
-            answer = None
-            answer_model = None
-            answer_error = None
-
-            if llm_chunks:
-                try:
-                    prompt = build_rag_prompt(query, llm_chunks)
-                    answer = call_local_llm(prompt, llm_cfg)
-                    answer_model = llm_cfg.get("model")
-                except Exception as llm_exc:
-                    answer_error = str(llm_exc)
-                    logger.warning("Local LLM call failed: %s", llm_exc)
-
-            return JsonResponse({
-                "query": query,
-                "answer": answer,
-                "answer_model": answer_model,
-                "answer_error": answer_error,
-                "results": hits,
-                "total": len(hits),
-                "source": "semantic",
-                "indexed": True,
-                "settings": app_settings,
-            })
+        return JsonResponse({
+            "query": query,
+            "answer": str(response),
+            "answer_model": "LlamaIndex Engine",
+            "answer_error": None,
+            "results": hits,
+            "total": len(hits),
+            "source": "semantic_multi",
+            "indexed": True,
+            "settings": app_settings,
+        })
+        
     except Exception as exc:
         import traceback
-        logger.error("Semantic search error: %s\n%s", exc, traceback.format_exc())
+        logger.error("New LlamaIndex Search error: %s\n%s", exc, traceback.format_exc())
         return JsonResponse({
             "query": query,
             "answer": None,
-            "answer_error": f"Semantic search failed: {exc}",
+            "answer_error": f"LlamaIndex engine failed: {exc}",
             "answer_model": None,
             "results": [],
             "total": 0,
@@ -259,66 +268,32 @@ def search(request):
             "settings": app_settings,
         })
 
-    creds = get_creds()
-    if creds:
-        service = drive_service(creds)
-        escaped = query.replace("'", "\\'")
-        conditions = [f"name contains '{escaped}'", "trashed = false", MIME_FILTER]
-        if folder_cfg and folder_cfg.get("folder_id"):
-            conditions.append(f"'{folder_cfg['folder_id']}' in parents")
-        try:
-            res = (
-                service.files()
-                .list(
-                    q=" and ".join(conditions),
-                    pageSize=10,
-                    fields="files(id, name, mimeType, modifiedTime, webViewLink, size)",
-                    orderBy="modifiedTime desc",
-                )
-                .execute()
-            )
-            files = res.get("files", [])
-        except Exception:
-            files = []
-    else:
-        files = []
+# LLM Status endpoint remains the same since it's just Ollama generic checks
+def llm_status(request):
+    try:
+        from api.services.llm_client import check_ollama_status
+        is_up, models = check_ollama_status()
+        from api.services.config import load_llm_config
+        cfg = load_llm_config()
+        return JsonResponse({
+            "reachable": is_up,
+            "provider": cfg.get("provider", "ollama"),
+            "current_model": cfg.get("model", ""),
+            "base_url": cfg.get("base_url", ""),
+            "available_models": models
+        })
+    except Exception:
+        return JsonResponse({"reachable": False})
 
-    if not files:
-        cache = load_cache()
-        words = [w.lower() for w in query.split() if w]
-        scored = [
-            (sum(1 for w in words if w in f.get("name", "").lower()), f)
-            for f in cache.get("files", [])
-        ]
-        files = [f for score, f in sorted(scored, key=lambda x: x[0], reverse=True) if score > 0][:10]
-
-    words = [w.lower() for w in query.split() if w]
-    hits = [
-        {
-            "id": f.get("id"),
-            "name": f.get("name", ""),
-            "mimeType": f.get("mimeType", ""),
-            "modifiedTime": f.get("modifiedTime", ""),
-            "webViewLink": f.get("webViewLink", ""),
-            "size": f.get("size"),
-            "snippet": None,
-            "score": None,
-            "relevance_hint": (
-                "Matched: " + ", ".join(w for w in words if w in f.get("name", "").lower())
-                or "Drive full-text match"
-            ),
-        }
-        for f in files
-    ]
-
-    return JsonResponse({
-        "query": query,
-        "answer": None,
-        "answer_model": None,
-        "answer_error": None,
-        "results": hits,
-        "total": len(hits),
-        "source": "keyword",
-        "indexed": False,
-        "folder": folder_cfg,
-    })
+def save_llm_config(request):
+    try:
+        payload = json.loads(request.body)
+        from api.services.config import load_llm_config, save_llm_config as save_cfg
+        cfg = load_llm_config()
+        if "base_url" in payload: cfg["base_url"] = payload["base_url"]
+        if "model" in payload: cfg["model"] = payload["model"]
+        if "provider" in payload: cfg["provider"] = payload["provider"]
+        save_cfg(cfg)
+        return JsonResponse({"status": "saved"})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=400)
