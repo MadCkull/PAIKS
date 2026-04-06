@@ -95,12 +95,8 @@ function renderTree(containerId, treeData, query = "", source = "cloud") {
 
     // Status indicator for files
     let statusIcon = "";
-    if (!isDir && isSupported && isChecked) {
-      if (hasError) {
-        statusIcon = `<i class="fas fa-exclamation-circle" style="color:#fb923c;font-size:0.7rem;margin-left:6px;" title="Indexing failed"></i>`;
-      } else if (isSynced) {
-        statusIcon = `<i class="fas fa-check" style="color:#34d399;font-size:0.65rem;margin-left:6px;" title="Indexed"></i>`;
-      }
+    if (!isDir && isSupported && isChecked && hasError) {
+      statusIcon = `<i class="status-icon fas fa-exclamation-circle" style="color:#fb923c;font-size:0.7rem;margin-left:6px;" title="Indexing failed"></i>`;
     }
 
     const checkboxHtml = `
@@ -123,9 +119,13 @@ function renderTree(containerId, treeData, query = "", source = "cloud") {
 
     // ── Directory node ──
     if (isDir) {
-      const openState = localStorage.getItem(`tree_open_${fileId}`) === "true" ? "open" : "";
+      // Use btoa unconditionally to safely persist states regardless of special path characters
+      let safeKey = "open_folder";
+      try { safeKey = "open_" + btoa(unescape(encodeURIComponent(fileId))).replace(/=/g, ''); } catch(e) {}
+      const openState = localStorage.getItem(safeKey) === "true" ? "open" : "";
+      
       return `
-        <details class="tree-details" ${openState} ontoggle="localStorage.setItem('tree_open_${escapeHtml(fileId)}', this.open)">
+        <details class="tree-details" ${openState} ontoggle="localStorage.setItem('${safeKey}', this.open)">
           <summary class="tree-node tree-node-dir" style="${opac}">
             ${checkboxHtml}
             <span class="tree-icon">${icon}</span>
@@ -211,66 +211,94 @@ function _computeFolderState(folderCb) {
   }
 }
 
-// ── Data Loading ───────────────────────────────────────────────
+// ── Background Data Preloading ─────────────────────────────────
+let _bgPreloadPromise = null;
+
+window.preloadDriveBackground = function() {
+  if (_bgPreloadPromise) return _bgPreloadPromise;
+  
+  _bgPreloadPromise = (async () => {
+    const localMode = localStorage.getItem("paiks-mode") === "local";
+    let settings = {}, stats = {};
+    
+    try {
+      const [sRes, setRes, stRes] = await Promise.all([
+        fetchWithTimeout(`${API_BASE}/drive/selections`, {}, 5000).catch(()=>({ json:()=>({selected:[],disabled:[],errors:[],synced:[]}) })),
+        fetchWithTimeout(`${API_BASE}/system/settings`, {}, 5000).catch(()=>({ json:()=>({}) })),
+        fetchWithTimeout(`${API_BASE}/drive/stats`, {}, 5000).catch(()=>({ json:()=>({}) }))
+      ]);
+      _selections = await sRes.json();
+      if (!_selections.errors) _selections.errors = [];
+      if (!_selections.synced) _selections.synced = [];
+      settings = await setRes.json();
+      stats = await stRes.json();
+      
+      const fetchPromises = [];
+      if (!localMode && stats.authenticated && settings.cloud_enabled) {
+        fetchPromises.push(
+          fetchWithTimeout(`${API_BASE}/drive/files?pageSize=100`, {}, 10000)
+          .then(r => r.json())
+          .then(data => {
+            _driveFiles = data.files || [];
+            _activeRootCloudName = data.folder?.name || stats.folder?.name || "Google Drive";
+          }).catch(()=>{})
+        );
+      }
+      if (settings.local_enabled && settings.local_root_path) {
+        fetchPromises.push(
+          fetchWithTimeout(`${API_BASE}/local/tree`, {}, 10000)
+          .then(r => r.json())
+          .then(data => { _localTree = data; }).catch(()=>{})
+        );
+      }
+      await Promise.all(fetchPromises);
+    } catch(e) {}
+  })();
+  return _bgPreloadPromise;
+};
+
+let _activeRootCloudName = "Google Drive";
+
 window.updateDriveModal = async function() {
   const searchInput = document.getElementById("drive-search-input");
   const query = searchInput ? searchInput.value.trim() : "";
   const localMode = localStorage.getItem("paiks-mode") === "local";
 
-  let settings = {};
-  let stats = {};
+  // Guarantee preloads are finished
+  await window.preloadDriveBackground();
 
-  try {
-    const sRes = await fetchWithTimeout(`${API_BASE}/drive/selections`, {}, 5000);
-    _selections = await sRes.json();
-    if (!_selections.errors) _selections.errors = [];
-    if (!_selections.synced) _selections.synced = [];
-  } catch(_) {}
-
-  try {
-    const res = await fetchWithTimeout(`${API_BASE}/system/settings`, {}, 5000);
-    settings = await res.json();
-  } catch(_) {}
-
-  try {
-    const res = await fetchWithTimeout(`${API_BASE}/drive/stats`, {}, 5000);
-    stats = await res.json();
-  } catch(_) {}
-
-  if (!localMode && stats.authenticated && settings.cloud_enabled) {
-    try {
-      const filesRes = await fetchWithTimeout(`${API_BASE}/drive/files?pageSize=100`, {}, 10000);
-      const filesData = await filesRes.json();
-      _driveFiles = filesData.files || [];
-      const rootName = filesData.folder?.name || stats.folder?.name || "Google Drive";
-      renderTree("tree-cloud", { name: rootName, type: "dir", children: _driveFiles }, query, "cloud");
-    } catch(e) {
-      renderTree("tree-cloud", null, "", "cloud");
-    }
+  // Render instantly from memory caches
+  if (_driveFiles.length > 0) {
+    renderTree("tree-cloud", { name: _activeRootCloudName, type: "dir", children: _driveFiles }, query, "cloud");
   } else {
     renderTree("tree-cloud", null, "", "cloud");
     if (localMode) {
-      const localTab = document.querySelector('#drive-tabs [data-tab="local"]');
-      if (localTab) localTab.click();
+       const localTab = document.querySelector('#drive-tabs [data-tab="local"]');
+       if (localTab) localTab.click();
     }
   }
 
-  if (settings.local_enabled && settings.local_root_path) {
-    try {
-      const localRes = await fetchWithTimeout(`${API_BASE}/local/tree`, {}, 10000);
-      _localTree = await localRes.json();
-      renderTree("tree-local", _localTree, query, "local");
-    } catch (e) {
-      renderTree("tree-local", null, "", "local");
-    }
+  if (_localTree) {
+    renderTree("tree-local", _localTree, query, "local");
   } else {
     renderTree("tree-local", null, "", "local");
   }
 
   setupSSE();
+  
+  // Background silent refresh of selections to ensure accuracy if modified externally
+  fetchWithTimeout(`${API_BASE}/drive/selections`, {}, 5000)
+    .then(r => r.json())
+    .then(data => {
+       _selections = data;
+       if (!_selections.errors) _selections.errors = [];
+       if (!_selections.synced) _selections.synced = [];
+    }).catch(()=>{});
 };
 
 document.addEventListener("DOMContentLoaded", () => {
+  preloadDriveBackground(); // Kicks off loading the trees the second the app opens
+
   const tabs = document.querySelectorAll("#drive-tabs .pill-btn");
   tabs.forEach(tab => {
     tab.addEventListener("click", () => {
@@ -392,6 +420,31 @@ function setupSSE() {
       else if (payload.type === "sync_update") {
         if (payload.data.status === "syncing") {
            setBadge("syncing");
+        }
+        
+        // Dynamically inject/remove error icons in tree without full re-render
+        if (payload.data.file_id) {
+           const safeId = payload.data.file_id.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+           const cb = document.querySelector(`.paiks-cb[data-id="${safeId}"]`);
+           if (cb) {
+              const nodeFile = cb.closest('.tree-node-file');
+              if (nodeFile) {
+                 let icon = nodeFile.querySelector('.status-icon');
+                 if (payload.data.status === "error") {
+                     if (!icon) {
+                         icon = document.createElement("i");
+                         icon.className = "status-icon fas fa-exclamation-circle";
+                         icon.style.cssText = "color:#fb923c;font-size:0.7rem;margin-left:6px;";
+                         icon.title = "Indexing failed";
+                         const meta = nodeFile.querySelector('.tree-meta');
+                         if (meta) { nodeFile.insertBefore(icon, meta); } 
+                         else { nodeFile.appendChild(icon); }
+                     }
+                 } else {
+                     if (icon) icon.remove();
+                 }
+              }
+           }
         }
       }
       else if (payload.type === "system_log") {

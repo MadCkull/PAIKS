@@ -209,6 +209,9 @@ def _index_worker():
     global _running
     while _running:
         try:
+            from django.db import close_old_connections
+            close_old_connections()
+            
             job = _index_queue.get(timeout=2)
 
             action = job.get("action")
@@ -335,9 +338,19 @@ def _index_worker():
                                 )
                             )
 
+                        fid = doc.file_id.replace("cloud__", "", 1)
+                        try:
+                            # Must fetch mimeType and webViewLink dynamically for proper parsing
+                            meta = service.files().get(fileId=fid, fields="mimeType, webViewLink").execute()
+                        except Exception as meta_e:
+                            logger.error(f"Failed to fetch metadata for {doc.name}: {meta_e}")
+                            meta = {}
+                            
                         file_dict = {
-                            "id": doc.file_id.replace("cloud__", "", 1),
+                            "id": fid,
                             "name": doc.name,
+                            "mime": meta.get("mimeType", ""),
+                            "link": meta.get("webViewLink", ""),
                             "modified": str(doc.last_modified)
                         }
                         parsed = parse_cloud_file(service, file_dict)
@@ -387,6 +400,9 @@ def _cloud_poll_worker():
     global _running
     while _running:
         try:
+            from django.db import close_old_connections
+            close_old_connections()
+            
             settings = load_app_settings()
             if settings.get("cloud_enabled"):
                 creds = get_creds()
