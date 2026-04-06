@@ -22,14 +22,14 @@ window.updateDashboardStats = async function() {
     const res = await fetchWithTimeout(`${API_BASE}/drive/stats`, {}, 5000);
     const stats = await res.json();
 
-    set("stat-total",  stats.documents_total || 0);
-    set("stat-cloud",  stats.cloud_total || 0);
-    set("stat-local",  stats.local_total || 0);
-    set("stat-sync",   timeAgo(stats.synced_at));
-    set("stat-sync-cloud", timeAgo(stats.synced_at));
+    set("stat-indexed",  stats.indexed_total || 0);
+    const inProgress = (stats.syncing_total || 0) + (stats.pending_total || 0);
+    set("stat-syncing",  inProgress);
+    set("stat-disabled", stats.disabled_total || 0);
+    set("stat-error",    stats.error_total || 0);
 
-    const totalBytes = stats.total_size_bytes || 0;
-    set("stat-storage", formatSize(totalBytes));
+    const spinner = document.getElementById("dash-sync-spinner");
+    if (spinner) spinner.style.display = inProgress > 0 ? "inline-block" : "none";
 
     // Distribution bars
     const fileTypes = stats.file_types || {};
@@ -86,40 +86,13 @@ window.updateToolbarContext = async function() {
   try {
     const res = await fetchWithTimeout(`${API_BASE}/drive/stats`, {}, 5000);
     const data = await res.json();
-    const cloud = data.cloud_total || 0;
-    const local = data.local_total || 0;
-
-    const cloudEl = document.querySelector("#toolbar-context .cloud-count");
-    const localEl = document.querySelector("#toolbar-context .local-count");
-    const sep     = document.querySelector("#toolbar-context .sep");
-
-    if (cloudEl) cloudEl.textContent = cloud;
-    if (localEl) localEl.textContent = local;
-    if (sep) sep.style.display = (cloud > 0 && local > 0) ? "" : "none";
+    
+    const countEl = document.getElementById("toolbar-indexed-count");
+    if (countEl) countEl.textContent = data.indexed_total || 0;
   } catch (_) {}
 };
 
-window.handleFeatureSync = async function() {
-  const card = document.getElementById("card-sync");
-  const icon = document.getElementById("sync-icon");
-  if (card) card.classList.add("feature-card-loading");
-  if (icon) icon.textContent = "⏳";
-
-  try {
-    if (window.triggerSync) {
-      await window.triggerSync();
-    } else {
-      await fetchWithTimeout(`${API_BASE}/rag/ingest`, { method: "POST", headers: { "X-CSRFToken": getCsrfToken() } }, 600000);
-    }
-    showToast("Sync completed", "success");
-    setTimeout(() => { openModal("dashboard-overlay"); updateDashboardStats(); }, 500);
-  } catch (err) {
-    showToast("Sync failed", "error");
-  } finally {
-    if (card) card.classList.remove("feature-card-loading");
-    if (icon) icon.textContent = "🔄";
-  }
-};
+// handleFeatureSync removed since Sync is fully automated.
 
 window.handleFeatureSearch = function() {
   const chatInput = document.getElementById("chat-input");

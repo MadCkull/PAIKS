@@ -16,11 +16,13 @@ urlpatterns = [
     path("drive/sync",          drive.sync),
     path("drive/stats",         drive.stats),
     path("drive/selection",     drive.selection),
+    path("drive/selections",    drive.selections),
     path("drive/set-folder",    drive.set_folder),
     path("drive/folder-config", drive.folder_config),
     # System
     path("system/settings",      system.settings_view),
     path("system/browse",        system.browse_local),
+    path("system/logs",          system.logs),
     # Search
     path("search",              search.search),
     # RAG

@@ -79,3 +79,27 @@ def browse_local(request):
         })
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
+
+def logs(request):
+    log_file = pathlib.Path("logs/sync.log")
+    if request.method == "POST":
+        try:
+            if log_file.exists():
+                with open(log_file, "w", encoding="utf-8") as f:
+                    f.write("")
+            return JsonResponse({"status": "cleared"})
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+            
+    if request.method == "GET":
+        try:
+            lines = []
+            if log_file.exists():
+                with open(log_file, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+            # Return last 1000 lines max
+            return JsonResponse({"logs": [l.strip() for l in lines[-1000:]]})
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+            
+    return JsonResponse({"error": "Method not allowed"}, status=405)

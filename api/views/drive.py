@@ -79,8 +79,10 @@ def selection(request):
         is_selected = payload.get("is_selected", True)
         
         from api.models import DocumentTrack
-        from api.services.sync_manager import _index_queue
+        from api.services.sync_manager import _index_queue, _compute_and_broadcast_health
+        from api.services.sync_manager import logger as sync_logger
         
+        processed = 0
         for fid in file_ids:
             doc, created = DocumentTrack.objects.get_or_create(
                 file_id=fid,
@@ -100,14 +102,39 @@ def selection(request):
                 doc.save()
             
             if is_selected and doc.sync_status == "pending":
+                sync_logger.info(f"{doc.name} selected, queued for indexing.")
                 _index_queue.put({"action": "index", "doc_id": doc.id})
             elif not is_selected:
+                sync_logger.info(f"{doc.name} deselected, removing from knowledge base.")
                 _index_queue.put({"action": "delete", "file_id": fid})
+            
+            processed += 1
+        
+        # If deselecting, immediately recompute health so badge updates
+        if not is_selected:
+            _compute_and_broadcast_health()
                 
-        return JsonResponse({"status": "updated", "count": len(file_ids)})
+        return JsonResponse({"status": "updated", "count": processed})
     except Exception as e:
         logger.error(f"Selection update error: {e}")
         return JsonResponse({"error": str(e)}, status=400)
+
+def selections(request):
+    """Returns tracked file states for UI rendering."""
+    try:
+        from api.models import DocumentTrack
+        selected_ids = list(DocumentTrack.objects.filter(is_selected=True).values_list('file_id', flat=True))
+        disabled_ids = list(DocumentTrack.objects.filter(is_selected=False).values_list('file_id', flat=True))
+        error_ids = list(DocumentTrack.objects.filter(sync_status="error").values_list('file_id', flat=True))
+        synced_ids = list(DocumentTrack.objects.filter(sync_status="synced", is_selected=True).values_list('file_id', flat=True))
+        return JsonResponse({
+            "selected": selected_ids,
+            "disabled": disabled_ids,
+            "errors": error_ids,
+            "synced": synced_ids
+        })
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
 
 def files(request):
     creds = get_creds()
