@@ -17,7 +17,7 @@ from api.services.rag.ingestion.chunking import chunk_documents
 from api.services.rag.ingestion.pipeline import ingest_nodes_to_collection
 from api.services.rag.retrieval.hybrid import get_base_retriever, get_hybrid_merging_retriever
 from api.services.rag.retrieval.reranker import get_cross_encoder_reranker
-from api.services.rag.generation.engine import build_query_engine
+from api.services.rag.generation.engine import build_agent
 from api.services.rag.ingestion.embedder import get_embedder
 
 from llama_index.core import VectorStoreIndex, QueryBundle
@@ -212,10 +212,10 @@ def search(request):
         multi_retriever = MultiCollectionRetriever(cloud_retriever, local_retriever)
         reranker = get_cross_encoder_reranker(top_n=5)
         
-        engine = build_query_engine(multi_retriever, reranker)
+        agent = build_agent(multi_retriever, reranker)
         
-        logger.info(f"Querying new engine: {query}")
-        response = engine.query(query)
+        logger.info(f"Querying new Intelligent Agent: {query}")
+        response = agent.chat(query)
         
         # Parse Source Nodes for frontend
         hits = []
@@ -243,10 +243,7 @@ def search(request):
 
         answer_str = str(response).strip()
         if answer_str == "Empty Response" or not answer_str or answer_str == "None":
-            if len(hits) == 0:
-                answer_str = "I couldn't find any relevant information in your indexed documents. Have you clicked 'Sync/Ingest' yet?"
-            else:
-                answer_str = "I found some relevant files, but couldn't formulate a proper response based on the context rules."
+            answer_str = "I couldn't generate a response."
 
         return JsonResponse({
             "query": query,
