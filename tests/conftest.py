@@ -19,9 +19,14 @@ def mock_llm(mocker):
     Mock the Ollama LLM to return standard strings instead of requiring the GPU to spin up.
     """
     mock_engine = MagicMock()
+    # Support for RAG query engine
     mock_engine.query.return_value = MagicMock(
-        response="This is a mocked LLM response.",
+        response="This is a mocked RAG response.",
         source_nodes=[]
+    )
+    # Support for Deterministic Router completion
+    mock_engine.complete.return_value = MagicMock(
+        __str__=lambda s: "SEARCH" # Default to SEARCH for safety
     )
     mocker.patch("api.services.rag.generation.engine.get_llm", return_value=mock_engine)
     return mock_engine

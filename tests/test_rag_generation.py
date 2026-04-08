@@ -5,12 +5,13 @@ from api.services.rag.generation.engine import build_query_engine
 
 def test_strict_citation_prompt_format():
     """
-    Validates the text template contains explicit citation enforcement directives
-    critical to our professional 99/100 standard.
+    Validates that the QA prompt enforces strict context-only answering
+    and mandatory citations.
     """
     template_str = QA_PROMPT.template
     
-    assert "answer ONLY using the provided context" in template_str
+    assert "using ONLY the provided context" in template_str
+    assert "I could not find relevant information" in template_str
     assert "strict citations" in template_str
     assert "[Source:" in template_str
 
