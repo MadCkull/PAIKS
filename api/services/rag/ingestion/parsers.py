@@ -6,6 +6,33 @@ from api.services.text_extraction import extract_text_from_drive, extract_text_f
 
 logger = logging.getLogger(__name__)
 
+def is_text_junk(text: str) -> bool:
+    """
+    Heuristic check to identify useless/garbage text (binary noise, failed extraction).
+    Returns True if text is looks like junk, False otherwise.
+    """
+    if not text or len(text.strip()) < 10:
+        return True
+    
+    # 1. Alphanumeric Ratio: 
+    # Garbage binary data converted to text usually has a very low ratio of normal chars.
+    alnum_count = sum(1 for c in text if c.isalnum() or c.isspace())
+    ratio = alnum_count / len(text)
+    
+    if ratio < 0.4:  # Less than 40% readable? Likely junk.
+        return True
+    
+    # 2. Extreme Repetition: 
+    # Corrupted extractions often produce strings of the same character.
+    # Check if a single character makes up more than 70% of a large sample.
+    sample = text[:500]
+    if len(sample) > 50:
+        most_common_freq = max([sample.count(c) for c in set(sample)]) / len(sample)
+        if most_common_freq > 0.7:
+            return True
+            
+    return False
+
 def parse_cloud_file(service, file_info: dict) -> Optional[Document]:
     """
     Parses a single cloud file into a LlamaIndex Document with strict metadata for citations.
@@ -16,7 +43,8 @@ def parse_cloud_file(service, file_info: dict) -> Optional[Document]:
     mime = file_info.get("mime", "")
     try:
         text = extract_text_from_drive(service, fid, mime)
-        if not text or not text.strip():
+        if not text or is_text_junk(text):
+            if text: logger.warning(f"Skipping cloud document {fname}: Detected as junk data.")
             return None
             
         doc = Document(
@@ -52,7 +80,8 @@ def parse_local_file(file_info: dict) -> Optional[Document]:
             return None
             
         text = extract_text_from_local(path_obj)
-        if not text or not text.strip():
+        if not text or is_text_junk(text):
+            if text: logger.warning(f"Skipping local document {fname}: Detected as junk data.")
             return None
             
         doc = Document(

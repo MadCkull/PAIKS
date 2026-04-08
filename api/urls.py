@@ -29,6 +29,7 @@ urlpatterns = [
     path("rag/status",          rag.status),
     path("rag/ingest",          rag.ingest),
     path("rag/search",          rag.search),
+    path("rag/debug/indices",   rag.debug_indices),
     path("rag/llm/status",      llm.status),
     path("rag/llm/config",      llm.config),
     # Local files

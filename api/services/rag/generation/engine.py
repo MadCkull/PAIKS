@@ -20,8 +20,19 @@ def get_llm() -> Ollama:
 def classify_intent(query: str) -> str:
     """
     Deterministically classifies the user query as SEARCH or GENERAL.
-    This bypasses the need for complex agent reasoning loops.
+    Uses hardcoded keyword checks for speed, falling back to LLM for nuance.
     """
+    q_low = query.lower().strip()
+    
+    # Fast-path keywords for forcing search
+    search_keywords = ["search", "find", "who is", "what is", "where is", "date", "born", "dob", "tell me about"]
+    if any(k in q_low for k in search_keywords):
+        return "SEARCH"
+        
+    # Generic greetings filter
+    if q_low in ["hi", "hello", "hey", "how are you", "who are you"]:
+        return "GENERAL"
+
     llm = get_llm()
     prompt = ROUTER_PROMPT_TMPL.format(query_str=query)
     response = llm.complete(prompt)

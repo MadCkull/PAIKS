@@ -1,9 +1,22 @@
 function formatAnswer(text) {
-  let html = escapeHtml(text);
+  let html = escapeHtml(text).replace(/\n/g, '<br>');
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-  html = html.replace(/\[([^\]]+)\]/g, '<strong style="color:var(--accent-light);">[$1]</strong>');
-  html = html.replace(/\n/g, '<br>');
+  
+  // Minimal numeric citation mapping (Stealth Mode)
+  const citations = [];
+  html = html.replace(/\[Source:\s*([^\]]+)\]/g, (match, p1) => {
+    const filename = p1.trim();
+    let index = citations.indexOf(filename);
+    if (index === -1) {
+        citations.push(filename);
+        index = citations.length - 1;
+    }
+    const displayNum = index + 1;
+    // Single line tag to avoid \n -> <br> clashes
+    return `<sup class="citation-minimal" onclick="window.openSourcesFromCitation('${escapeHtml(filename)}')" title="${escapeHtml(filename)}">${displayNum}</sup>`;
+  });
+
   html = html.replace(/(?:^|<br>)[-•]\s+(.+?)(?=<br>|$)/g, '<li>$1</li>');
   if (html.includes('<li>')) {
     html = html.replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>');
@@ -107,30 +120,24 @@ async function ragSearch(queryOverride) {
 
     let sourcesHtml = "";
     if (data.results && data.results.length > 0) {
-      const isSemantic = data.source === "semantic";
-      const sourceItems = data.results.map(r => {
-        const scoreLabel = (isSemantic && r.score != null) ? `<span class="chat-source-score" style="font-size:0.75rem;padding:2px 6px;border-radius:12px;background:var(--accent-bg);color:var(--accent);margin-left:auto">${Math.round(r.score * 100)}%</span>` : "";
-        return `
-          <a href="${r.webViewLink || '#'}" target="_blank" rel="noopener" class="chat-source-item" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--border-dim);border-radius:8px;text-decoration:none;color:var(--text);margin-top:8px">
-            <span class="chat-source-icon">${getFileEmoji(r.mimeType || '')}</span>
-            <span class="chat-source-name" style="font-size:0.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(r.name || '')}</span>
-            ${scoreLabel}
-          </a>`;
-      }).join("");
-
+      // Store results on the window object for citation lookups
+      window._lastSourceResults = data.results;
+      
       sourcesHtml = `
-        <div style="margin-top:12px">
-            <button class="chat-sources-toggle btn btn-sm btn-outline" style="font-size:0.8rem;padding:4px 10px;" onclick="this.nextElementSibling.classList.toggle('hidden');">
-            ▶ ${data.total || data.results.length} source(s)
+        <div style="margin-top:16px; display:flex; gap:8px;">
+            <button class="btn btn-sm btn-outline chat-sources-trigger" 
+                    style="font-size:0.75rem; padding:6px 14px; border-radius:12px; display:flex; align-items:center; gap:6px; background:rgba(108,92,231,0.05);" 
+                    onclick="window.openSourcesPanel()">
+                <i class="fas fa-stream" style="font-size:0.8rem; color:var(--accent);"></i>
+                View ${data.total || data.results.length} References
             </button>
-            <div class="chat-sources-list hidden" style="margin-top:8px">${sourceItems}</div>
         </div>`;
     }
 
-    addChatMessage("ai", `
+    const aiMsg = addChatMessage("ai", `
       <div class="chat-msg-avatar" style="background:var(--accent-bg);color:var(--accent)">🧠</div>
       <div class="chat-msg-bubble">
-        ${answerContent}
+        <div class="ai-answer-container">${answerContent}</div>
         ${sourcesHtml}
       </div>`);
 
@@ -322,3 +329,201 @@ window.ragIngest = async function() {
     await loadRagStatus();
   }
 }
+// --- Side Panel Controls ---
+window.openSourcesPanel = function(highlightName = null) {
+    const overlay = document.getElementById("sources-panel-overlay");
+    const body = document.getElementById("sources-body");
+    if (!overlay || !body) return;
+
+    const results = window._lastSourceResults || [];
+    if (results.length === 0) {
+        body.innerHTML = `<div style="text-align:center; padding:40px; color:var(--text-dim);">No references available for this answer.</div>`;
+    } else {
+        body.innerHTML = results.map(r => {
+            const score = r.score ? Math.round(r.score * 100) : 0;
+            const scoreClass = score > 80 ? 'score-high' : (score > 50 ? 'score-mid' : 'score-low');
+            const isHighlighted = highlightName && (r.name.includes(highlightName) || highlightName.includes(r.name));
+            
+            return `
+                <a href="${r.webViewLink || '#'}" target="_blank" class="source-card-vibrant ${isHighlighted ? 'highlighted' : ''}" id="source-${btoa(r.name).replace(/=/g,'')}">
+                    <div class="card-top">
+                        <div class="file-info">
+                            <div class="file-icon">${getFileEmoji(r.mimeType)}</div>
+                            <div>
+                                <div class="file-name">${escapeHtml(r.name.split(/[\\/]/).pop())}</div>
+                                <div class="source-type">${escapeHtml(r.source || 'cloud')} match</div>
+                            </div>
+                        </div>
+                        <div class="score-badge ${scoreClass}">${score}%</div>
+                    </div>
+                    <div class="snippet">
+                        "${escapeHtml(r.snippet || 'No excerpt available.')}"
+                    </div>
+                </a>
+            `;
+        }).join("");
+    }
+
+    overlay.classList.add("active");
+
+    if (highlightName) {
+        setTimeout(() => {
+            const el = body.querySelector(".highlighted");
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 300);
+    }
+};
+
+window.openSourcesFromCitation = function(name) {
+    window.openSourcesPanel(name);
+};
+
+window.closeSourcesPanel = function() {
+    const overlay = document.getElementById("sources-panel-overlay");
+    if (overlay) overlay.classList.remove("active");
+};
+
+document.addEventListener("DOMContentLoaded", () => {
+   const closeBtn = document.getElementById("btn-close-sources");
+   const overlay = document.getElementById("sources-panel-overlay");
+   if(closeBtn) closeBtn.onclick = window.closeSourcesPanel;
+   if(overlay) {
+       overlay.onclick = (e) => {
+           if(e.target === overlay) window.closeSourcesPanel();
+       };
+   }
+});
+
+document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+        window.closeSourcesPanel();
+        window.closeKnowledgeInspector();
+    }
+});
+
+// --- KNOWLEDGE INSPECTOR (DEBUG) ---
+window.openKnowledgeInspector = async function() {
+    const modal = document.getElementById("modal-knowledge-inspector");
+    const list = document.getElementById("inspector-list");
+    const loading = document.getElementById("inspector-loading");
+    const empty = document.getElementById("inspector-empty");
+    const stat = document.getElementById("inspector-stats");
+    const metricPills = document.getElementById("metric-pills");
+    
+    if (!modal || !list) return;
+    
+    modal.classList.remove("hidden");
+    list.innerHTML = "";
+    loading.style.display = "block";
+    empty.style.display = "none";
+    stat.textContent = "Traversing Qdrant...";
+    if (metricPills) metricPills.innerHTML = "";
+
+    try {
+        const res = await fetch(`${API_BASE}/rag/debug/indices`);
+        const data = await res.json();
+        
+        loading.style.display = "none";
+        const files = data.files || [];
+        const m = data.metrics || {};
+        
+        if (metricPills) {
+            metricPills.innerHTML = `
+                <div class="metric-pill"><i class="fas fa-file"></i> Unique Files: <b>${m.total_files || 0}</b></div>
+                <div class="metric-pill"><i class="fas fa-hdd"></i> Local: <b>${m.local_count || 0}</b></div>
+                <div class="metric-pill"><i class="fas fa-cloud"></i> Cloud: <b>${m.cloud_count || 0}</b></div>
+                <div class="metric-pill"><i class="fas fa-layer-group"></i> Total Chunks: <b>${m.total_chunks || 0}</b></div>
+            `;
+        }
+
+        if (files.length === 0) {
+            empty.style.display = "block";
+            stat.textContent = "Database is currently empty.";
+        } else {
+            stat.textContent = `Audit complete. Found ${files.length} unique source documents.`;
+            window._cachedInspectorFiles = files; 
+            renderInspectorGrouped(files);
+        }
+    } catch (err) {
+        loading.style.display = "none";
+        empty.style.display = "block";
+        empty.innerHTML = `<span style="color:var(--error)">Error querying Qdrant: ${err.message}</span>`;
+    }
+};
+
+window.closeKnowledgeInspector = function() {
+    const modal = document.getElementById("modal-knowledge-inspector");
+    if (modal) modal.classList.add("hidden");
+};
+
+function renderInspectorGrouped(files) {
+    const list = document.getElementById("inspector-list");
+    if (!list) return;
+    
+    list.innerHTML = files.map((f, idx) => {
+        const chunkCount = f.chunks?.length || 0;
+        const statusClass = chunkCount > 0 ? "badge-status-ok" : "badge-status-warn";
+        const statusText = chunkCount > 0 ? `${chunkCount} chunks` : "EMPTY / ERROR";
+        
+        return `
+            <tr class="file-row" onclick="window.toggleInspectorRow(${idx})">
+                <td style="text-align:center;"><i class="fas fa-chevron-right expander-icon" id="exp-icon-${idx}"></i></td>
+                <td style="font-weight:600; padding-left: 0;">${escapeHtml(f.name)}</td>
+                <td><span class="badge-source badge-${f.source}">${f.source}</span></td>
+                <td><span class="badge-status ${statusClass}">${statusText}</span></td>
+                <td style="color:var(--text-dim); font-size: 0.75rem;">${formatDate(f.modified)}</td>
+            </tr>
+            <tr class="chunk-expansion-row hidden" id="chunk-row-${idx}" onclick="window.toggleInspectorRow(${idx})">
+                <td colspan="5">
+                    <div class="chunk-container">
+                        ${f.chunks.map((c, cIdx) => `
+                            <div class="chunk-item">
+                                <div class="chunk-meta">
+                                    <span>Snippet #${cIdx + 1}</span>
+                                    <span>ID: ${c.id?.toString().substring(0,8)}...</span>
+                                </div>
+                                <div class="chunk-content-raw">${escapeHtml(c.text)}</div>
+                            </div>
+                        `).join("")}
+                        ${chunkCount === 0 ? '<div style="padding:10px; opacity:0.5; font-size:0.8rem;">Potential processing failure: No semantic chunks found.</div>' : ''}
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join("");
+}
+
+window.toggleInspectorRow = function(idx) {
+    const row = document.getElementById(`chunk-row-${idx}`);
+    const icon = document.getElementById(`exp-icon-${idx}`);
+    const parent = icon.closest('.file-row');
+    
+    if (row) {
+        const isHidden = row.classList.toggle("hidden");
+        parent.classList.toggle("expanded", !isHidden);
+    }
+};
+
+// Search Filter
+document.addEventListener("DOMContentLoaded", () => {
+    const searchInput = document.getElementById("inspector-search");
+    if (searchInput) {
+        searchInput.oninput = () => {
+            const val = searchInput.value.toLowerCase();
+            const filtered = (window._cachedInspectorFiles || []).filter(f => 
+                (f.name && f.name.toLowerCase().includes(val)) || 
+                (f.chunks && f.chunks.some(c => c.text.toLowerCase().includes(val)))
+            );
+            renderInspectorGrouped(filtered);
+        };
+    }
+
+    const inspectBtn = document.getElementById("btn-inspect-knowledge");
+    if (inspectBtn) {
+        inspectBtn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            window.openKnowledgeInspector();
+        };
+    }
+});

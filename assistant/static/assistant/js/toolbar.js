@@ -78,6 +78,7 @@ function initToolbar() {
       if (action === "settings")  openModal("settings-overlay");
       if (action === "drive")     openModal("drive-overlay");
       if (action === "dashboard") openModal("dashboard-overlay");
+      if (action === "knowledge") window.openKnowledgeInspector();
       if (action === "theme")     toggleTheme();
     });
   });

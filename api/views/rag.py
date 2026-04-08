@@ -249,9 +249,16 @@ def search(request):
         for node in response.source_nodes:
             meta = node.node.metadata
             fid = meta.get("file_id") or meta.get("file_name", "unknown")
+            score = round(node.score if node.score else 0.0, 3)
+            
+            # Diagnostic Log: See exactly what the reranker thinks
+            logger.info(f"RAG Hit: {meta.get('file_name')} | Score: {score}")
+
             if fid not in seen_fids:
+                if score < 0.05: # Lowered from 0.15 to prevent missing valid context
+                    continue
+                
                 seen_fids.add(fid)
-                score = round(node.score if node.score else 0.0, 3)
                 source_type = meta.get("source", "google")
                 hits.append({
                     "id": fid,
@@ -259,7 +266,7 @@ def search(request):
                     "mimeType": meta.get("mime_type", ""),
                     "webViewLink": meta.get("web_view_link", ""),
                     "modifiedTime": meta.get("modified_time", ""),
-                    "snippet": node.node.get_content()[:320].strip(),
+                    "snippet": node.node.get_content()[:800].strip(),
                     "score": score,
                     "source": source_type,
                     "localPath": meta.get("local_path", ""),
@@ -313,6 +320,86 @@ def llm_status(request):
         })
     except Exception:
         return JsonResponse({"reachable": False})
+
+# --- DEBUG / INSPECTOR ENDPOINTS ---
+
+def debug_indices(request):
+    """
+    Returns a grouped, file-centric view of ALL raw data in Qdrant collections.
+    Calculates metrics and identifies empty/fragmented files.
+    """
+    import json
+    from api.services.rag.indexer import get_qdrant_client, LOCAL_COLLECTION, CLOUD_COLLECTION
+    client = get_qdrant_client()
+    
+    # Structure: { file_id: { name, source, size, chunks: [] } }
+    grouped_data = {}
+    
+    def fetch_all_from_collection(col_name):
+        if not client.collection_exists(col_name):
+            return
+            
+        next_offset = None
+        while True:
+            points, next_offset = client.scroll(
+                collection_name=col_name,
+                limit=100,
+                offset=next_offset,
+                with_payload=True,
+                with_vectors=False
+            )
+            
+            for p in points:
+                payload = p.payload
+                fid = payload.get("file_id") or "unknown"
+                
+                if fid not in grouped_data:
+                    grouped_data[fid] = {
+                        "name": payload.get("file_name", "Unknown File"),
+                        "source": col_name.split("_")[1], # local or cloud
+                        "modified": payload.get("modified_time", ""),
+                        "chunks": []
+                    }
+                
+                # Extract clean text
+                text = payload.get("text") or payload.get("content")
+                if not text and "_node_content" in payload:
+                    try:
+                        node_data = json.loads(payload["_node_content"])
+                        text = node_data.get("text")
+                    except: pass
+                
+                grouped_data[fid]["chunks"].append({
+                    "id": p.id,
+                    "text": text or "[Empty snippet]"
+                })
+                
+            if next_offset is None:
+                break
+
+    fetch_all_from_collection(LOCAL_COLLECTION)
+    fetch_all_from_collection(CLOUD_COLLECTION)
+    
+    # Convert to sorted list for frontend
+    # Sort by Source (Local first), then File Name
+    sort_priority = {"local": 0, "cloud": 1}
+    result_list = sorted(
+        grouped_data.values(), 
+        key=lambda x: (sort_priority.get(x["source"], 99), x["name"].lower())
+    )
+    
+    # Summary Metrics
+    metrics = {
+        "total_files": len(result_list),
+        "local_count": sum(1 for x in result_list if x["source"] == "local"),
+        "cloud_count": sum(1 for x in result_list if x["source"] == "cloud"),
+        "total_chunks": sum(len(x["chunks"]) for x in result_list)
+    }
+            
+    return JsonResponse({
+        "files": result_list,
+        "metrics": metrics
+    })
 
 def save_llm_config(request):
     try:
