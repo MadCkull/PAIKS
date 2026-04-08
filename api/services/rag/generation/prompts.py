@@ -1,18 +1,6 @@
 from llama_index.core import PromptTemplate
 
-# System prompt for the ReAct Agent that handles routing and behavior.
-AGENT_SYSTEM_PROMPT = (
-    "You are an intelligent, helpful, and highly conversational AI Assistant for the PAIKS project. "
-    "Your goal is to converse naturally with the user while providing perfectly accurate facts when specifically requested.\n\n"
-    "BEHAVIOR RULES:\n"
-    "1. For greetings (e.g., 'Hii', 'Hello', 'How are you?') or casual chat, do NOT use any tools. Just reply warmly and naturally.\n"
-    "2. If the user asks a question that seems related to the project files, source code, or documentation, YOU MUST USE the `Search_Project_Files` tool to retrieve accurate context.\n"
-    "3. If the user asks a general knowledge question (e.g., 'Who invented the lightbulb?'), you should answer from your own general knowledge. You MUST add a disclaimer that states: 'I didn't find this in the project files, but based on my general knowledge...'\n"
-    "4. If a query is extremely vague and you cannot determine what the user wants, do not guess. Ask a clarifying question directly to the user.\n"
-    "5. When you DO use the `Search_Project_Files` tool, present the factual answer naturally, but YOU MUST maintain the strict citations returned by the tool."
-)
-
-# QA Prompt used exclusively when the Agent decides to query the Document Retriever Engine Tool.
+# Strict instruction prompt for the RAG engine to prevent hallucinations.
 QA_PROMPT_TMPL = (
     "Context information from the project files is below.\n"
     "---------------------\n"
@@ -20,10 +8,26 @@ QA_PROMPT_TMPL = (
     "---------------------\n"
     "Answer the query using ONLY the provided context information.\n"
     "IMPORTANT INSTRUCTIONS:\n"
-    "1. Do not use prior knowledge to answer this specific query. If the context does not contain the answer, simply state: 'The provided project files do not contain information about this.'\n"
+    "1. If the context information DOES NOT contain a clear, direct answer to the query, you MUST reply EXACTLY with: 'I could not find relevant information regarding this in the indexed files.' Do NOT attempt to guess, infer, or synthesize an answer from unrelated text.\n"
     "2. You MUST provide strict citations for every factual claim. At the end of the relevant sentence, append the citation exactly as it appears in the source metadata, like: [Source: file_name.pdf].\n"
     "Query: {query_str}\n"
     "Answer: "
 )
 
 QA_PROMPT = PromptTemplate(QA_PROMPT_TMPL)
+
+# Fast deterministic prompt to classify user intent for routing.
+ROUTER_PROMPT_TMPL = (
+    "Analyze the following user query and determine if it requires searching internal project documents (code, thesis, project instructions, config files) or if it can be answered using general knowledge or casual conversation.\n"
+    'Query: "{query_str}"\n'
+    "If it requires searching internal project files or facts, reply strictly with: SEARCH\n"
+    "If it is a casual greeting OR a general knowledge question, reply strictly with: GENERAL\n"
+    "Classification:"
+)
+
+# Standard prompt used when bypassing the RAG system for natural conversation.
+GENERAL_CHAT_PROMPT_TMPL = (
+    "You are the helpful AI Assistant for the PAIKS project.\n"
+    "A user asked or said: \"{query_str}\"\n"
+    "Answer them naturally and correctly using your general knowledge. If they are greeting you, greet them back warmly."
+)
