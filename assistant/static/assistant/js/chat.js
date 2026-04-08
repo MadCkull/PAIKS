@@ -182,6 +182,17 @@ function initChatUI() {
   const chatInput = document.getElementById("chat-input");
   const modernInputBox = document.querySelector(".modern-input-box");
   const chatThread = document.getElementById("chat-thread");
+  const chatModelBtn = document.getElementById("chat-model-btn");
+  const modelDropdownMenu = document.getElementById("model-dropdown-menu");
+
+  if (chatModelBtn && modelDropdownMenu) {
+    chatModelBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const isExpanded = chatModelBtn.getAttribute("aria-expanded") === "true";
+      chatModelBtn.setAttribute("aria-expanded", !isExpanded);
+      modelDropdownMenu.classList.toggle("hidden", isExpanded);
+    });
+  }
 
   if (chatInput && modernInputBox) {
     let isFocused = false;

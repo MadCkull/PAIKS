@@ -3,12 +3,10 @@
   <nav class="toolbarComponent" id="toolbarComponent">
 
     <!-- Status: indexed files count -->
-    <div class="toolbar-context" id="toolbar-context">
-      <span class="status-dot"></span>
-      <span id="cloud-count" class="cloud-count">0</span>
-      <span class="sep">·</span>
-      <span id="local-count" class="local-count">0</span>
-      <span style="color:var(--text-secondary)">indexed</span>
+    <div class="toolbar-context" id="toolbar-context" style="display:flex; align-items:center;">
+      <span class="status-dot" style="background-color: var(--color-success);"></span>
+      <span id="toolbar-indexed-count" style="font-weight:bold; margin: 0 6px;">0</span>
+      <span style="color:var(--text-secondary)">files indexed</span>
     </div>
 
     <button class="tab-btn" data-action="chat" aria-label="Chat">

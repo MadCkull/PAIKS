@@ -1,6 +1,19 @@
 let _driveFiles = [];
 let _localTree  = null;
 let _activeTab  = "cloud";
+let _selections = { selected: [], disabled: [], errors: [], synced: [] };
+
+const SUPPORTED_EXTS = ["pdf", "csv", "xlsx", "xls", "ppt", "pptx", "png", "jpg", "jpeg", "webp", "py", "md", "txt", "doc", "docx"];
+
+function isSupportedFile(node, name) {
+  if (node.type === "dir" || (node.mimeType && node.mimeType.includes("folder"))) return true;
+  const ext = name.split('.').pop().toLowerCase();
+  if (SUPPORTED_EXTS.includes(ext)) return true;
+  if (node.mimeType) {
+    if (node.mimeType.includes("text") || node.mimeType.includes("pdf") || node.mimeType.includes("document")) return true;
+  }
+  return false;
+}
 
 function driveFileIcon(mime, name = "") {
   if (mime && mime.includes("folder")) return "📁";
@@ -14,6 +27,29 @@ function driveFileIcon(mime, name = "") {
   return "📄";
 }
 
+// ── Helpers ─────────────────────────────────────────────────────
+function _getFileId(node, source) {
+  if (source === "local") return node.id || `local__${node.path || node.local_path || node.name || ""}`;
+  return `cloud__${node.id}`;
+}
+
+function _isDir(node) {
+  return node.type === "dir" || (node.mimeType && node.mimeType.includes("folder"));
+}
+
+function _isFileChecked(fileId) {
+  return !_selections.disabled.includes(fileId);
+}
+
+function _hasError(fileId) {
+  return _selections.errors.includes(fileId);
+}
+
+function _isSynced(fileId) {
+  return _selections.synced.includes(fileId);
+}
+
+// ── Tree Rendering ─────────────────────────────────────────────
 function renderTree(containerId, treeData, query = "", source = "cloud") {
   const container = document.getElementById(containerId);
   if (!container) return;
@@ -30,7 +66,7 @@ function renderTree(containerId, treeData, query = "", source = "cloud") {
   }
 
   function buildHtml(node, isRoot = false) {
-    const isDir = node.type === "dir" || (node.mimeType && node.mimeType.includes("folder"));
+    const isDir = _isDir(node);
     const name  = node.name || "Untitled";
 
     if (query && !isRoot) {
@@ -39,7 +75,7 @@ function renderTree(containerId, treeData, query = "", source = "cloud") {
     }
 
     const icon = isDir ? "📁" : driveFileIcon(node.mimeType, name);
-    const accent = source === "cloud" ? "var(--cloud)" : "var(--local)";
+    const isSupported = isSupportedFile(node, name);
 
     let childHtml = "";
     if (node.children && node.children.length > 0) {
@@ -50,15 +86,67 @@ function renderTree(containerId, treeData, query = "", source = "cloud") {
 
     if (query && isDir && !childHtml && !isRoot) return "";
 
+    const fileId = _getFileId(node, source);
+    const isChecked = isSupported && _isFileChecked(fileId);
+    const hasError = _hasError(fileId);
+    const isSynced = !isDir && _isSynced(fileId);
+    const disabledAttr = !isSupported ? "disabled" : "";
+    const opac = !isSupported ? "opacity:0.35; pointer-events:none;" : "";
+
+    // Status indicator for files
+    let statusIcon = "";
+    if (!isDir && isSupported && isChecked && hasError) {
+      statusIcon = `<i class="status-icon fas fa-exclamation-circle" style="color:#fb923c;font-size:0.7rem;margin-left:6px;" title="Indexing failed"></i>`;
+    }
+
+    const checkboxHtml = `
+      <input type="checkbox" class="paiks-cb" ${isChecked ? "checked" : ""} ${disabledAttr}
+             data-id="${escapeHtml(fileId)}" data-isdir="${isDir}" data-source="${source}"
+             onchange="toggleSelection(this)">
+    `;
+
+    // ── Root node: separated header card ──
+    if (isRoot) {
+      return `
+        <div class="tree-root-header">
+          ${checkboxHtml}
+          <span class="tree-root-icon">${icon}</span>
+          <span class="tree-root-name">${escapeHtml(name)}</span>
+        </div>
+        <div class="tree-body">${childHtml}</div>
+      `;
+    }
+
+    // ── Directory node ──
+    if (isDir) {
+      // Use btoa unconditionally to safely persist states regardless of special path characters
+      let safeKey = "open_folder";
+      try { safeKey = "open_" + btoa(unescape(encodeURIComponent(fileId))).replace(/=/g, ''); } catch(e) {}
+      const openState = localStorage.getItem(safeKey) === "true" ? "open" : "";
+      
+      return `
+        <details class="tree-details" ${openState} ontoggle="localStorage.setItem('${safeKey}', this.open)">
+          <summary class="tree-node tree-node-dir" style="${opac}">
+            ${checkboxHtml}
+            <span class="tree-icon">${icon}</span>
+            <span class="tree-name">${escapeHtml(name)}</span>
+          </summary>
+          <div class="tree-children">
+            ${childHtml}
+          </div>
+        </details>
+      `;
+    }
+
+    // ── File node ──
     return `
-      <div class="tree-node" style="${isRoot ? 'font-weight:600;' : ''}">
-        <input type="checkbox" checked style="accent-color:${accent};">
-        <span>${icon}</span>
-        <span class="name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
-        ${node.size ? `<span class="meta">${formatSize(node.size)}</span>` : ""}
-      </div>
-      <div class="tree-children" style="padding-left:20px;">
-        ${childHtml}
+      <div class="tree-node tree-node-file" style="${opac}">
+        ${checkboxHtml}
+        <span class="tree-icon">${icon}</span>
+        <span class="tree-name">${escapeHtml(name)}</span>
+        ${statusIcon}
+        ${node.size ? `<span class="tree-meta">${formatSize(node.size)}</span>` : ""}
+        ${!isSupported ? `<span class="tree-meta" style="color:#f87171;">(Unsupported)</span>` : ""}
       </div>
     `;
   }
@@ -69,74 +157,148 @@ function renderTree(containerId, treeData, query = "", source = "cloud") {
   }
 
   container.innerHTML = buildHtml(rootNode, true);
+
+  // After rendering, compute folder indeterminate states
+  _updateAllFolderStates(container);
 }
+
+// ── Three-state folder checkbox logic ──────────────────────────
+function _updateAllFolderStates(container) {
+  // Walk all <details> elements bottom-up
+  const allDetails = Array.from(container.querySelectorAll('.tree-details'));
+  // Reverse so we process deepest folders first
+  allDetails.reverse().forEach(det => {
+    const folderCb = det.querySelector(':scope > summary > .paiks-cb');
+    if (!folderCb) return;
+    _computeFolderState(folderCb);
+  });
+  // Also handle root checkbox
+  const rootCb = container.querySelector('.tree-root-header > .paiks-cb');
+  if (rootCb) _computeFolderState(rootCb);
+}
+
+function _computeFolderState(folderCb) {
+  // Find the children container
+  let childContainer;
+  const rootHeader = folderCb.closest('.tree-root-header');
+  if (rootHeader) {
+    childContainer = rootHeader.nextElementSibling; // .tree-body
+  } else {
+    const details = folderCb.closest('.tree-details');
+    if (details) childContainer = details.querySelector('.tree-children');
+  }
+  if (!childContainer) return;
+
+  const childCbs = childContainer.querySelectorAll('.paiks-cb:not([disabled])');
+  if (childCbs.length === 0) return;
+
+  let checkedCount = 0;
+  let totalCount = 0;
+  childCbs.forEach(cb => {
+    totalCount++;
+    if (cb.checked) checkedCount++;
+  });
+
+  if (checkedCount === 0) {
+    folderCb.checked = false;
+    folderCb.indeterminate = false;
+  } else if (checkedCount === totalCount) {
+    folderCb.checked = true;
+    folderCb.indeterminate = false;
+  } else {
+    folderCb.checked = false;
+    folderCb.indeterminate = true;
+  }
+}
+
+// ── Background Data Preloading ─────────────────────────────────
+let _bgPreloadPromise = null;
+
+window.preloadDriveBackground = function() {
+  if (_bgPreloadPromise) return _bgPreloadPromise;
+  
+  _bgPreloadPromise = (async () => {
+    const localMode = localStorage.getItem("paiks-mode") === "local";
+    let settings = {}, stats = {};
+    
+    try {
+      const [sRes, setRes, stRes] = await Promise.all([
+        fetchWithTimeout(`${API_BASE}/drive/selections`, {}, 5000).catch(()=>({ json:()=>({selected:[],disabled:[],errors:[],synced:[]}) })),
+        fetchWithTimeout(`${API_BASE}/system/settings`, {}, 5000).catch(()=>({ json:()=>({}) })),
+        fetchWithTimeout(`${API_BASE}/drive/stats`, {}, 5000).catch(()=>({ json:()=>({}) }))
+      ]);
+      _selections = await sRes.json();
+      if (!_selections.errors) _selections.errors = [];
+      if (!_selections.synced) _selections.synced = [];
+      settings = await setRes.json();
+      stats = await stRes.json();
+      
+      const fetchPromises = [];
+      if (!localMode && stats.authenticated && settings.cloud_enabled) {
+        fetchPromises.push(
+          fetchWithTimeout(`${API_BASE}/drive/files?pageSize=100`, {}, 10000)
+          .then(r => r.json())
+          .then(data => {
+            _driveFiles = data.files || [];
+            _activeRootCloudName = data.folder?.name || stats.folder?.name || "Google Drive";
+          }).catch(()=>{})
+        );
+      }
+      if (settings.local_enabled && settings.local_root_path) {
+        fetchPromises.push(
+          fetchWithTimeout(`${API_BASE}/local/tree`, {}, 10000)
+          .then(r => r.json())
+          .then(data => { _localTree = data; }).catch(()=>{})
+        );
+      }
+      await Promise.all(fetchPromises);
+    } catch(e) {}
+  })();
+  return _bgPreloadPromise;
+};
+
+let _activeRootCloudName = "Google Drive";
 
 window.updateDriveModal = async function() {
   const searchInput = document.getElementById("drive-search-input");
   const query = searchInput ? searchInput.value.trim() : "";
   const localMode = localStorage.getItem("paiks-mode") === "local";
 
-  let settings = {};
-  let stats = {};
+  // Guarantee preloads are finished
+  await window.preloadDriveBackground();
 
-  // Fetch settings & stats independently
-  try {
-    const res = await fetchWithTimeout(`${API_BASE}/system/settings`, {}, 5000);
-    settings = await res.json();
-  } catch(_) {}
-
-  try {
-    const res = await fetchWithTimeout(`${API_BASE}/drive/stats`, {}, 5000);
-    stats = await res.json();
-  } catch(_) {}
-
-  // ── CLOUD TREE ──────────────────────────────────────────
-  if (!localMode && stats.authenticated && settings.cloud_enabled) {
-    try {
-      const filesRes = await fetchWithTimeout(`${API_BASE}/drive/files?pageSize=100`, {}, 10000);
-      const filesData = await filesRes.json();
-      _driveFiles = filesData.files || [];
-      const rootName = filesData.folder?.name || stats.folder?.name || "Google Drive";
-      renderTree("tree-cloud", { name: rootName, type: "dir", children: _driveFiles }, query, "cloud");
-    } catch(e) {
-      renderTree("tree-cloud", null, "", "cloud");
-    }
+  // Render instantly from memory caches
+  if (_driveFiles.length > 0) {
+    renderTree("tree-cloud", { name: _activeRootCloudName, type: "dir", children: _driveFiles }, query, "cloud");
   } else {
     renderTree("tree-cloud", null, "", "cloud");
-    // Auto-switch to local tab if in local mode
     if (localMode) {
-      const localTab = document.querySelector('#drive-tabs [data-tab="local"]');
-      if (localTab) localTab.click();
+       const localTab = document.querySelector('#drive-tabs [data-tab="local"]');
+       if (localTab) localTab.click();
     }
   }
 
-  // ── LOCAL TREE ──────────────────────────────────────────
-  if (settings.local_enabled && settings.local_root_path) {
-    try {
-      const localRes = await fetchWithTimeout(`${API_BASE}/local/tree`, {}, 10000);
-      _localTree = await localRes.json();
-      renderTree("tree-local", _localTree, query, "local");
-    } catch (e) {
-      renderTree("tree-local", null, "", "local");
-    }
+  if (_localTree) {
+    renderTree("tree-local", _localTree, query, "local");
   } else {
     renderTree("tree-local", null, "", "local");
   }
 
-  // ── CONSOLE LOGS ────────────────────────────────────────
-  const el = document.getElementById("sync-console");
-  if (el) {
-    el.innerHTML = "";
-    if (stats.authenticated && !localMode) consoleLog(`[OK] Cloud: ${stats.cloud_total || 0} files indexed`, "ok");
-    if (localMode && !stats.authenticated) consoleLog(`[INFO] Running in local mode`, "info");
-    if (settings.local_root_path) consoleLog(`[OK] Local: Root set to ${settings.local_root_path}`, "ok");
-    if (stats.synced_at && stats.synced_at !== "Not synced yet") consoleLog(`[INFO] Last sync: ${timeAgo(stats.synced_at)}`, "info");
-  }
+  setupSSE();
+  
+  // Background silent refresh of selections to ensure accuracy if modified externally
+  fetchWithTimeout(`${API_BASE}/drive/selections`, {}, 5000)
+    .then(r => r.json())
+    .then(data => {
+       _selections = data;
+       if (!_selections.errors) _selections.errors = [];
+       if (!_selections.synced) _selections.synced = [];
+    }).catch(()=>{});
 };
 
-// ── TAB & SEARCH LOGIC ───────────────────────────────────────
-
 document.addEventListener("DOMContentLoaded", () => {
+  preloadDriveBackground(); // Kicks off loading the trees the second the app opens
+
   const tabs = document.querySelectorAll("#drive-tabs .pill-btn");
   tabs.forEach(tab => {
     tab.addEventListener("click", () => {
@@ -165,67 +327,240 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 
-function consoleLog(msg, type = "info") {
-  const el = document.getElementById("sync-console");
-  if (!el) return;
-  const cls = { ok: "log-ok", warn: "log-warn", info: "log-info" }[type] || "log-info";
-  const line = document.createElement("div");
-  line.className = cls;
-  line.textContent = msg;
-  el.appendChild(line);
-  el.scrollTop = el.scrollHeight;
+// ── SSE & Real-time Log Console ────────────────────────────────
+let _eventSource = null;
+
+window.openLogConsole = async function() {
+    const con = document.getElementById("drive-log-console");
+    if(con) {
+        con.classList.remove("hidden");
+        try {
+            const res = await fetchWithTimeout(`${API_BASE}/system/logs`, {}, 5000);
+            const data = await res.json();
+            const logBody = document.getElementById("drive-log-body");
+            if (logBody) {
+                logBody.innerHTML = (data.logs || []).map(line => {
+                    let color = "#a0aec0";
+                    let msg = line;
+                    let timeStr = "";
+                    const match = line.match(/^\[(.*?)\] (.*?): (.*)$/);
+                    if (match) {
+                        timeStr = match[1];
+                        const lvl = match[2].toLowerCase();
+                        msg = match[3];
+                        if (lvl.includes("error") || lvl.includes("critical")) color = "#f87171";
+                        else if (lvl.includes("warn")) color = "#fbbf24";
+                        else if (msg.toLowerCase().includes("indexed") || msg.toLowerCase().includes("removed") || msg.toLowerCase().includes("deleted")) color = "#34d399";
+                    }
+                    return `<div style="color:${color}; margin-bottom:5px; line-height:1.4; cursor:default;" title="${timeStr}">${escapeHtml(msg)}</div>`;
+                }).join("");
+                logBody.scrollTop = logBody.scrollHeight;
+            }
+        } catch(e) { }
+    }
+};
+
+window.closeLogConsole = function() {
+    const con = document.getElementById("drive-log-console");
+    if(con) con.classList.add("hidden");
+};
+
+window.clearLogs = async function() {
+    try {
+        await fetch(`${API_BASE}/system/logs`, { method: "POST", headers: {"X-CSRFToken": getCsrfToken()} });
+        const logBody = document.getElementById("drive-log-body");
+        if(logBody) logBody.innerHTML = "";
+    } catch(e) {}
+};
+
+// ── Badge System ───────────────────────────────────────────────
+let _badgeTimer = null;
+let _currentBadgeState = "synced";
+
+function setBadge(state) {
+    const badges = document.getElementById("drive-badges");
+    if (!badges) return;
+
+    if (_badgeTimer) clearTimeout(_badgeTimer);
+
+    const applyBadge = (s) => {
+        _currentBadgeState = s;
+        let html = "";
+        if (s === "syncing") {
+            html = `<div class="badge badge-syncing" onclick="openLogConsole()"><i class="fas fa-sync-alt fa-spin"></i> SYNCING</div>`;
+        } else if (s === "synced") {
+            html = `<div class="badge badge-success" onclick="openLogConsole()"><i class="fas fa-check-circle"></i> SYNCED</div>`;
+        } else if (s === "warning") {
+            html = `<div class="badge badge-warning" onclick="openLogConsole()"><i class="fas fa-exclamation-circle"></i> SYNCED</div>`;
+        } else if (s === "error") {
+            html = `<div class="badge badge-error" onclick="openLogConsole()"><i class="fas fa-times-circle"></i> ERROR</div>`;
+        }
+        badges.innerHTML = html;
+    };
+
+    if (state !== "syncing" && _currentBadgeState === "syncing") {
+        _badgeTimer = setTimeout(() => applyBadge(state), 700);
+    } else {
+        applyBadge(state);
+    }
 }
 
-window.triggerSync = async function() {
-  const btn = document.getElementById("btn-sync-now");
-  if (btn) { btn.disabled = true; btn.textContent = "⏳ Syncing…"; }
-  consoleLog("[INFO] Starting sync & ingest…", "info");
+function setupSSE() {
+  if (_eventSource) return;
+  _eventSource = new EventSource(`${API_BASE}/events/status`);
+  
+  _eventSource.onmessage = function(e) {
+    try {
+      const payload = JSON.parse(e.data);
 
-  const localMode = localStorage.getItem("paiks-mode") === "local";
+      if (payload.type === "system_health") {
+          setBadge(payload.data.state);
+          if (window.updateDashboardStats) window.updateDashboardStats();
+      }
+      else if (payload.type === "sync_update") {
+        if (payload.data.status === "syncing") {
+           setBadge("syncing");
+        }
+        
+        // Dynamically inject/remove error icons in tree without full re-render
+        if (payload.data.file_id) {
+           const safeId = payload.data.file_id.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+           const cb = document.querySelector(`.paiks-cb[data-id="${safeId}"]`);
+           if (cb) {
+              const nodeFile = cb.closest('.tree-node-file');
+              if (nodeFile) {
+                 let icon = nodeFile.querySelector('.status-icon');
+                 if (payload.data.status === "error") {
+                     if (!icon) {
+                         icon = document.createElement("i");
+                         icon.className = "status-icon fas fa-exclamation-circle";
+                         icon.style.cssText = "color:#fb923c;font-size:0.7rem;margin-left:6px;";
+                         icon.title = "Indexing failed";
+                         const meta = nodeFile.querySelector('.tree-meta');
+                         if (meta) { nodeFile.insertBefore(icon, meta); } 
+                         else { nodeFile.appendChild(icon); }
+                     }
+                 } else {
+                     if (icon) icon.remove();
+                 }
+              }
+           }
+        }
+      }
+      else if (payload.type === "system_log") {
+          const logBody = document.getElementById("drive-log-body");
+          if (logBody) {
+              const div = document.createElement("div");
+              const d = payload.data;
+              let color = "#a0aec0";
+              if (d.level === "success") color = "#34d399";
+              else if (d.level === "warning") color = "#fbbf24";
+              else if (d.level === "error") color = "#f87171";
+              div.style.cssText = `color:${color}; margin-bottom:5px; line-height:1.4; cursor:default;`;
+              div.title = d.time || "";
+              div.textContent = d.msg;
+              logBody.appendChild(div);
+              logBody.scrollTop = logBody.scrollHeight;
+          }
+      }
+    } catch(err) {}
+  };
+}
+
+// ── Selection Toggle (Professional three-state system) ─────────
+
+window.toggleSelection = async function(checkboxEl) {
+  const isSelected = checkboxEl.checked;
+  const isDir = checkboxEl.getAttribute("data-isdir") === "true";
+
+  // Collect ONLY actual file IDs (never directories)
+  let idsToUpdate = [];
+
+  if (!isDir) {
+    idsToUpdate.push(checkboxEl.getAttribute("data-id"));
+  }
+
+  if (isDir) {
+    // Find child container
+    let childContainer;
+    const rootHeader = checkboxEl.closest('.tree-root-header');
+    if (rootHeader) {
+      childContainer = rootHeader.nextElementSibling;
+    } else {
+      const detailsTag = checkboxEl.closest('.tree-details');
+      if (detailsTag) childContainer = detailsTag.querySelector('.tree-children');
+    }
+
+    if (childContainer) {
+      const childCBs = childContainer.querySelectorAll('.paiks-cb:not([disabled])');
+      childCBs.forEach(cb => {
+        cb.checked = isSelected;
+        cb.indeterminate = false;
+        if (cb.getAttribute("data-isdir") !== "true") {
+          idsToUpdate.push(cb.getAttribute("data-id"));
+        }
+      });
+    }
+  }
+
+  // Propagate upward: update ALL parent folder checkboxes
+  _propagateUp(checkboxEl);
+
+  if (idsToUpdate.length === 0) return;
+
+  // Update local cache
+  if (isSelected) {
+    _selections.disabled = _selections.disabled.filter(id => !idsToUpdate.includes(id));
+  } else {
+    idsToUpdate.forEach(id => {
+      if (!_selections.disabled.includes(id)) _selections.disabled.push(id);
+    });
+  }
 
   try {
-    // Only sync cloud if NOT in local-only mode and authenticated
-    if (!localMode) {
-      try {
-        const res = await fetchWithTimeout(`${API_BASE}/drive/sync`, {
-          method: "POST",
-          headers: { "X-CSRFToken": getCsrfToken() }
-        }, 60000);
-        const data = await res.json();
-        if (data.error) {
-          consoleLog(`[WARN] Cloud: ${data.error}`, "warn");
-        } else {
-          consoleLog(`[OK] Cloud sync: ${data.total} files`, "ok");
-        }
-      } catch(e) {
-        consoleLog(`[WARN] Cloud sync skipped: ${e.message}`, "warn");
-      }
-    } else {
-      consoleLog("[INFO] Cloud sync skipped (local mode)", "info");
-    }
-
-    // Always run ingest (handles both sources)
-    consoleLog("[INFO] Creating embeddings…", "info");
-    const ingestRes = await fetchWithTimeout(`${API_BASE}/rag/ingest`, {
+    setBadge("syncing");
+    await fetchWithTimeout(`${API_BASE}/drive/selection`, {
       method: "POST",
-      headers: { "X-CSRFToken": getCsrfToken() }
-    }, 600000);
-    const ingestData = await ingestRes.json();
-
-    if (ingestData.error) {
-      consoleLog(`[WARN] ${ingestData.error}`, "warn");
-    } else {
-      consoleLog(`[OK] ${ingestData.files_processed} files processed, ${ingestData.total_chunks} chunks`, "ok");
-      consoleLog("[DONE] All sources up to date", "ok");
-    }
-    await updateDriveModal();
-  } catch (e) {
-    consoleLog(`[ERROR] Sync failed: ${e.message}`, "warn");
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = "🔄 Sync Now"; }
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCsrfToken()
+      },
+      body: JSON.stringify({ file_ids: idsToUpdate, is_selected: isSelected })
+    });
+    if (window.updateDashboardStats) window.updateDashboardStats();
+  } catch(e) {
+    console.error("Selection failed", e);
+    setBadge("error");
   }
 };
 
+function _propagateUp(checkboxEl) {
+  // Walk up the DOM to find parent folder checkboxes and recompute their state
+  let currentEl = checkboxEl;
+  while (currentEl) {
+    // Find the parent tree-children container
+    const parentChildren = currentEl.closest('.tree-children') || currentEl.closest('.tree-body');
+    if (!parentChildren) break;
+
+    // Find the parent folder's checkbox
+    let parentCb = null;
+    const parentDetails = parentChildren.closest('.tree-details');
+    if (parentDetails) {
+      parentCb = parentDetails.querySelector(':scope > summary > .paiks-cb');
+    } else {
+      // We're inside .tree-body → parent is root header
+      const treeView = parentChildren.closest('.tree-view');
+      if (treeView) parentCb = treeView.querySelector('.tree-root-header > .paiks-cb');
+    }
+
+    if (!parentCb) break;
+
+    _computeFolderState(parentCb);
+    currentEl = parentCb;
+  }
+}
+
+// ── File List (legacy grid view) ───────────────────────────────
 window.loadFiles = async function(query = "") {
   const container = document.getElementById("files-container");
   if (!container) return;

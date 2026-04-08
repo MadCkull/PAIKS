@@ -1,77 +1,136 @@
 <!-- ── DASHBOARD MODAL ───────────────────────────────────────────── -->
+<style>
+.glass-panel {
+    background: rgba(30, 34, 42, 0.6);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 20px;
+    padding: 24px;
+    box-shadow: 0 10px 40px 0 rgba(0, 0, 0, 0.4);
+    transition: transform 0.3s ease, border-color 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+.glass-panel::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 4px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    opacity: 0.5;
+}
+.glass-panel:hover {
+    transform: translateY(-4px);
+    border-color: rgba(255, 255, 255, 0.15);
+}
+.stat-value {
+    font-size: 2.8rem;
+    font-weight: 800;
+    margin: 10px 0;
+    text-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    line-height: 1;
+}
+.stat-label {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.stat-success { color: #34d399; }
+.stat-warning { color: #fbbf24; }
+.stat-error { color: #f87171; }
+.stat-neutral { color: #9ca3af; }
+
+.dash-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    margin-bottom: 24px;
+}
+
+.system-status-indicator {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: #34d399;
+    box-shadow: 0 0 10px #34d399;
+    animation: pulse 2s infinite;
+}
+@keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.7); }
+    70% { box-shadow: 0 0 0 10px rgba(52, 211, 153, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+}
+</style>
+
 <div id="dashboard-overlay" class="overlay hidden">
-  <div class="modal modal-fullscreen" style="max-width:1000px;height:auto;max-height:90vh;">
-    <div class="modal-header">
-      <h3>📊 Dashboard & Stats</h3>
-      <button class="btn-close btn-icon" onclick="closeModal('dashboard-overlay')">✕</button>
+  <div class="modal modal-fullscreen" style="max-width:1100px; height:auto; max-height:90vh; background: transparent; box-shadow: none; border: none;">
+    
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 30px; padding: 0 10px;">
+      <div>
+        <h2 style="margin:0; font-size: 2.2rem; font-weight: 800; color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,0.5);">System Metrics</h2>
+        <div style="color: var(--text-dim); font-size: 0.95rem; margin-top: 4px; display:flex; align-items:center; gap:8px;">
+           <span class="system-status-indicator"></span> Real-time Knowledge Base Analytics
+        </div>
+      </div>
+      <button class="btn-close btn-icon" onclick="closeModal('dashboard-overlay')" style="background: rgba(255,255,255,0.1); border-radius: 50%; width: 44px; height: 44px; backdrop-filter: blur(10px);">✕</button>
     </div>
-    <div class="modal-body">
 
-      <!-- Filter Bar -->
-      <div class="dash-filter-bar">
-        <div class="pill-toggle" id="dash-filter">
-          <button class="pill-btn active" data-filter="all">All Sources</button>
-          <button class="pill-btn" data-filter="cloud">☁️ Cloud</button>
-          <button class="pill-btn" data-filter="local">💻 Local</button>
-        </div>
+    <!-- Tier 1 Metrics -->
+    <div class="dash-grid">
+      <div class="glass-panel" style="border-top-color: rgba(52, 211, 153, 0.5);">
+         <div class="stat-label">🟢 Indexed Native</div>
+         <div class="stat-value stat-success" id="stat-indexed">0</div>
+         <div style="font-size: 0.8rem; color: var(--text-dim); margin-top: 8px;">Active & Vectorized</div>
+      </div>
+      
+      <div class="glass-panel" style="border-top-color: rgba(251, 191, 36, 0.5);">
+         <div class="stat-label">⚙️ Queue / Syncing</div>
+         <div class="stat-value stat-warning" id="stat-syncing">0</div>
+         <div style="font-size: 0.8rem; color: var(--text-dim); margin-top: 8px;" id="dash-sync-spinner">Processing in background...</div>
       </div>
 
-      <!-- Key Metrics -->
-      <div class="stats-grid">
-        <div class="stat-card">
-          <h4>Total Files Indexed</h4>
-          <div class="value" id="stat-total">—</div>
-          <div class="breakdown" id="stat-total-breakdown">
-            <span class="cloud-val"><span class="dot c"></span> <span id="stat-cloud">—</span></span>
-            <span class="local-val"><span class="dot l"></span> <span id="stat-local">—</span></span>
-          </div>
-        </div>
-        <div class="stat-card">
-          <h4>ChromaDB Embeddings</h4>
-          <div class="value" id="stat-embeddings">—</div>
-          <div class="breakdown">
-            <span class="cloud-val"><span class="dot c"></span> <span id="stat-emb-cloud">—</span></span>
-            <span class="local-val"><span class="dot l"></span> <span id="stat-emb-local">—</span></span>
-          </div>
-        </div>
-        <div class="stat-card">
-          <h4>Last Sync</h4>
-          <div class="value" id="stat-sync" style="font-size:1.4rem;">—</div>
-          <div class="breakdown">
-            <span class="cloud-val"><span class="dot c"></span> <span id="stat-sync-cloud">—</span></span>
-          </div>
-        </div>
+      <div class="glass-panel" style="border-top-color: rgba(248, 113, 113, 0.5);">
+         <div class="stat-label">🔴 Errors / Blocked</div>
+         <div class="stat-value stat-error" id="stat-error">0</div>
+         <div style="font-size: 0.8rem; color: var(--text-dim); margin-top: 8px;">Parse failures & Drops</div>
+      </div>
+    </div>
+
+    <!-- Tier 2 Context & Settings -->
+    <div class="dash-grid" style="grid-template-columns: 2fr 1fr;">
+      
+      <!-- Type Distribution -->
+      <div class="glass-panel">
+         <div class="stat-label" style="margin-bottom: 20px;">🧩 File Type Matrix</div>
+         <div id="dist-bars" style="display:flex; flex-direction:column; gap:12px;">
+            <div class="dist-bar-row"><span class="dist-bar-label" style="color:var(--text-dim);">Connecting to stream...</span></div>
+         </div>
       </div>
 
-      <!-- File Type Distribution -->
-      <div style="margin-top:28px;">
-        <h4 style="font-size:.9rem;color:var(--text-secondary);margin-bottom:16px;font-weight:500;">File Type Distribution</h4>
-        <div id="dist-bars">
-          <div class="dist-bar-row"><span class="dist-bar-label" style="color:var(--text-dim);">Loading…</span></div>
-        </div>
-      </div>
-
-      <!-- Second Row Stats -->
-      <div class="stats-grid" style="margin-top:28px;">
-        <div class="stat-card">
-          <h4>Total Storage Indexed</h4>
-          <div class="value" id="stat-storage" style="font-size:1.5rem;">—</div>
-          <div class="breakdown">
-            <span class="cloud-val"><span class="dot c"></span> <span id="stat-storage-cloud">—</span></span>
-            <span class="local-val"><span class="dot l"></span> <span id="stat-storage-local">—</span></span>
-          </div>
-        </div>
-        <div class="stat-card">
-          <h4>Chat Sessions</h4>
-          <div class="value" id="stat-sessions">0</div>
-        </div>
-        <div class="stat-card">
-          <h4>LLM Status</h4>
-          <div class="value" id="stat-llm" style="font-size:1.2rem;">Checking…</div>
-          <p id="stat-llm-model" style="font-size:.8rem;color:var(--text-dim);margin-top:4px;"></p>
-        </div>
+      <!-- General Connectivity -->
+      <div class="glass-panel" style="display:flex; flex-direction:column; justify-content:space-between;">
+         <div>
+            <div class="stat-label">⚪ Disabled / Unselected</div>
+            <div class="stat-value stat-neutral" id="stat-disabled" style="font-size: 2rem;">0</div>
+         </div>
+         <div style="margin-top: 20px;">
+            <div class="stat-label">🤖 LLM Engine</div>
+            <div class="stat-value" id="stat-llm" style="font-size: 1.2rem; margin: 4px 0; color: #fff;">Checking...</div>
+            <p id="stat-llm-model" style="font-size:0.8rem; color:var(--text-dim); margin:0;"></p>
+         </div>
+         <div style="margin-top: 20px;">
+            <div class="stat-label">💬 Local Sessions</div>
+            <div class="stat-value" id="stat-sessions" style="font-size: 1.4rem; margin: 4px 0; color: #fff;">0</div>
+         </div>
       </div>
 
     </div>
+
   </div>
 </div>

@@ -106,9 +106,19 @@ def upload(request):
         # We delete old versions of this file if they existed in Qdrant Local Collection
         try:
             if client.collection_exists(LOCAL_COLLECTION):
+                from qdrant_client.http import models
                 client.delete(
                     collection_name=LOCAL_COLLECTION,
-                    points_selector={"filter": {"must": [{"key": "file_name", "match": {"value": dest.name}}]}}
+                    points_selector=models.FilterSelector(
+                        filter=models.Filter(
+                            must=[
+                                models.FieldCondition(
+                                    key="file_name",
+                                    match=models.MatchValue(value=dest.name)
+                                )
+                            ]
+                        )
+                    )
                 )
         except Exception as e:
             logger.warning(f"Error deleting old qdrant points: {e}")
@@ -161,9 +171,19 @@ def delete(request):
     try:
         client = get_qdrant_client()
         if client.collection_exists(LOCAL_COLLECTION):
+             from qdrant_client.http import models
              client.delete(
                 collection_name=LOCAL_COLLECTION,
-                points_selector={"filter": {"must": [{"key": "file_name", "match": {"value": dest.name}}]}}
+                points_selector=models.FilterSelector(
+                    filter=models.Filter(
+                        must=[
+                            models.FieldCondition(
+                                key="file_name",
+                                match=models.MatchValue(value=dest.name)
+                            )
+                        ]
+                    )
+                )
              )
     except Exception as exc:
         logger.warning(f"Qdrant delete error for {dest.name}: {exc}")
