@@ -97,9 +97,10 @@ async function ragSearch(queryOverride) {
   try {
     // Gather conversation history for follow-up awareness (last 6 messages)
     let history = [];
-    if (typeof _activeSid !== 'undefined' && _activeSid && typeof _sessions !== 'undefined') {
-      const sess = _sessions[_activeSid];
-      if (sess && sess.messages) {
+    if (typeof _activeSid !== 'undefined' && _activeSid && typeof sessionsGet === 'function') {
+      const allSessions = sessionsGet();
+      const sess = allSessions.find(s => s.id === _activeSid);
+      if (sess && sess.messages && sess.messages.length > 0) {
         history = sess.messages.slice(-6).map(m => ({
           role: m.role || 'user',
           content: m.text || m.content || ''

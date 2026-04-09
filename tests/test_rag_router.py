@@ -1,33 +1,41 @@
 import pytest
 from unittest.mock import MagicMock
-from api.services.rag.generation.engine import classify_intent, get_general_response
+from api.services.rag.retrieval.query_rewriter import (
+    rewrite_query, detect_filename_query,
+)
 
-def test_classify_intent_search(mock_llm):
-    """
-    Ensures technical queries are correctly classified as SEARCH.
-    """
-    # Force the mock to return SEARCH
-    mock_llm.complete.return_value = "SEARCH"
+def test_detect_filename_exact_match():
+    """Ensures filename detection works for exact name matches."""
+    known = [
+        {"file_id": "f1", "file_name": "PAIKS Project.docx", "source": "local", "collection": "paiks_local_index"},
+        {"file_id": "f2", "file_name": "Config Guide.pdf", "source": "cloud", "collection": "paiks_cloud_index"},
+    ]
     
-    intent = classify_intent("Summarize the Config Instructions file")
-    assert intent == "SEARCH"
+    result = detect_filename_query("Summarize the PAIKS Project file", known)
+    assert result is not None
+    assert result["file_id"] == "f1"
 
-def test_classify_intent_general(mock_llm):
-    """
-    Ensures greetings or casual chat are correctly classified as GENERAL.
-    """
-    # Force the mock to return GENERAL
-    mock_llm.complete.return_value = "GENERAL"
+def test_detect_filename_partial_match():
+    """Ensures filename detection works for partial name matches."""
+    known = [
+        {"file_id": "f1", "file_name": "PAIKS Project.docx", "source": "local", "collection": "paiks_local_index"},
+    ]
     
-    intent = classify_intent("Hii, how are you today?")
-    assert intent == "GENERAL"
+    result = detect_filename_query("what does paiks project say about auth?", known)
+    assert result is not None
+    assert result["file_id"] == "f1"
 
-def test_get_general_response(mock_llm):
-    """
-    Ensures the general chat path returns a natural conversational answer.
-    """
-    mock_llm.complete.return_value = "Hello! I am your PAIKS assistant. How can I help you?"
+def test_detect_filename_no_match():
+    """Ensures no false positive when no filename is mentioned."""
+    known = [
+        {"file_id": "f1", "file_name": "PAIKS Project.docx", "source": "local", "collection": "paiks_local_index"},
+    ]
     
-    response = get_general_response("Hii")
-    assert "Hello!" in response
-    assert "PAIKS assistant" in response
+    result = detect_filename_query("How does authentication work?", known)
+    assert result is None
+
+def test_rewrite_query_fallback(mock_llm):
+    """Ensures query rewriter falls back to original on LLM failure."""
+    mock_llm.complete.side_effect = Exception("LLM offline")
+    result = rewrite_query("How does auth work?")
+    assert result == "How does auth work?"

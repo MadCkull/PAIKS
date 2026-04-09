@@ -1,33 +1,58 @@
 from llama_index.core import PromptTemplate
 
-# ── Unified RAG + General Knowledge Prompt ─────────────────────────────────
-# This single prompt handles both cases:
-# - When context documents are provided: answer using them with citations
-# - When no context is provided: answer naturally from general knowledge
-#
-# The similarity gate in the search pipeline decides whether to include
-# the context block or leave it empty.
+# ── Unified RAG Prompt with Conversation History ───────────────────────────
+# This prompt handles:
+# - Document-grounded Q&A with citations
+# - Conversation history for follow-up questions
+# - Concise, direct responses without meta-commentary
 
 QA_PROMPT_TMPL = (
-    "You are PAIKS, a helpful and natural-sounding AI assistant.\n"
-    "You have access to a personal knowledge base of documents.\n\n"
-    "Rules:\n"
-    "1. If context documents are provided below, use them to answer accurately.\n"
-    "   Strictly cite every factual claim using EXACTLY this format: "
-    "[Source: filename.ext → Section Name]\n"
-    "   If no section is available, use: [Source: filename.ext]\n"
-    "2. If no context is provided, OR if the context clearly does not answer "
-    "the question, answer naturally from your own knowledge — "
-    "do NOT mention the knowledge base or documents.\n"
-    "3. Never fabricate document content. If documents are provided but "
-    "insufficient, say so honestly.\n"
-    "4. Maintain a natural, conversational tone at all times.\n"
-    "5. For follow-up questions, use the conversation context to stay coherent.\n\n"
+    "You are PAIKS, a concise and accurate AI assistant.\n\n"
+    "DOCUMENT EXCERPTS:\n"
     "---------------------\n"
     "{context_str}\n"
     "---------------------\n\n"
-    "Query: {query_str}\n"
+    "RULES:\n"
+    "1. You MUST use the CONVERSATION HISTORY (if provided below) to understand context, follow-ups, and answer questions about the conversation itself.\n"
+    "2. Answer the user's question using the DOCUMENT EXCERPTS and the CONVERSATION HISTORY.\n"
+    "3. Cite every fact from excerpts with [Source: filename.ext] or [Source: filename.ext → Section Name]. Do not cite conversation history.\n"
+    "4. Be CONCISE — answer in 1-3 short paragraphs. Do NOT write essays.\n"
+    "5. If the history or excerpts contain the answer, USE THEM. Do not say you cannot find it.\n"
+    "6. If the answer is completely missing, say so briefly and answer from your own knowledge.\n"
+    "7. NEVER say things like 'It seems like you provided context' or 'Based on the context'. Just answer directly.\n"
+    "8. Do NOT repeat the question back. Do NOT add filler phrases.\n\n"
+    "{query_str}\n"
     "Answer: "
 )
 
 QA_PROMPT = PromptTemplate(QA_PROMPT_TMPL)
+
+
+def build_query_with_history(query: str, history: list[dict] | None = None) -> str:
+    """Build the query string, prepending conversation history if available.
+    
+    This injects history into the {query_str} template variable since
+    LlamaIndex's RetrieverQueryEngine only supports {context_str} and {query_str}.
+    """
+    if not history:
+        return f"Question: {query}"
+    
+    # Build a compact history block (last 6 messages)
+    turns = []
+    for msg in history[-6:]:
+        role = msg.get("role", "user")
+        content = msg.get("content", "").strip()
+        if content:
+            label = "User" if role == "user" else "Assistant"
+            turns.append(f"{label}: {content}")
+    
+    if not turns:
+        return f"Question: {query}"
+    
+    history_block = "\n".join(turns)
+    return (
+        f"--- CONVERSATION HISTORY ---\n"
+        f"{history_block}\n"
+        f"----------------------------\n\n"
+        f"Question: {query}"
+    )

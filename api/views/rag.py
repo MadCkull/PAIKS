@@ -180,6 +180,8 @@ class MultiCollectionRetriever(BaseRetriever):
         return nodes
 
 def search(request):
+    from api.services.rag.tracer import PipelineTracer
+
     try:
         payload = json.loads(request.body) if request.body else {}
     except ValueError:
@@ -191,59 +193,135 @@ def search(request):
 
     history = payload.get("history", [])  # optional conversation context
 
+    # ── Start pipeline trace ──
+    tracer = PipelineTracer(query)
+    tracer.log_section("1. RAW USER QUERY", {"query": query})
+    tracer.log_section("2. CONVERSATION HISTORY (from frontend)", history if history else "(none sent)")
+
     app_settings = load_app_settings()
     cloud_enabled = app_settings.get("cloud_enabled", True)
     local_enabled = app_settings.get("local_enabled", True)
+    tracer.log_section("3. APP SETTINGS", {
+        "cloud_enabled": cloud_enabled,
+        "local_enabled": local_enabled,
+    })
 
-    # 1. Query Intelligence Layer
+    # 1. Query Intelligence Layer (filename detection only — rewriter disabled)
     from api.services.rag.retrieval.query_rewriter import (
-        rewrite_query, detect_filename_query, get_known_files_from_qdrant,
+        detect_filename_query, get_known_files_from_qdrant,
     )
 
-    # Check if user is asking about a specific file
     known_files = get_known_files_from_qdrant()
+    tracer.log_section("4. KNOWN FILES IN QDRANT", [
+        {"file_id": f["file_id"], "file_name": f["file_name"], "source": f["source"], "collection": f["collection"]}
+        for f in known_files
+    ])
+
     file_match = detect_filename_query(query, known_files)
+    tracer.log_section("5. FILENAME DETECTION", file_match if file_match else "(no filename match)")
 
-    # Rewrite query for better retrieval (unless it's a filename-specific query)
+    # Use original query directly — LLM rewriter was destroying queries
     retrieval_query = query
-    if not file_match:
-        retrieval_query = rewrite_query(query, history if history else None)
+    tracer.log_section("6. QUERY FOR RETRIEVAL", {
+        "retrieval_query": retrieval_query,
+        "note": "Using original query (rewriter disabled)",
+    })
 
-    # 2. Always-Retrieve RAG Pathway (no routing decision)
+    # 2. Always-Retrieve RAG Pathway
     try:
         from api.services.rag.indexer import get_qdrant_client
+        from api.services.rag.generation.prompts import build_query_with_history
         
         client = get_qdrant_client()
         embedder = get_embedder()
 
-        # If a specific file was detected, do metadata-filtered retrieval
+        # Build the history-aware query string for the LLM
+        llm_query = build_query_with_history(query, history if history else None)
+        tracer.log_section("6B. LLM SYNTHESIS QUERY", {"llm_query": llm_query})
+
+        tracer.log_section("7. EMBEDDING MODEL", {
+            "model_name": str(getattr(embedder, 'model_name', 'unknown')),
+            "base_url": str(getattr(embedder, 'base_url', 'unknown')),
+        })
+
         if file_match:
             logger.info(f"File-specific retrieval for: {file_match.get('file_name')}")
+            tracer.log_text("8. RETRIEVAL MODE", f"FILE-SPECIFIC: {file_match.get('file_name')} (collection: {file_match.get('collection')})")
             response = _file_specific_query(
-                query, file_match, client, embedder, cloud_enabled, local_enabled
+                query, llm_query, file_match, client, embedder, cloud_enabled, local_enabled
             )
         else:
-            # Normal multi-collection retrieval with rewritten query
             cloud_retriever = None
             local_retriever = None
 
+            collections_used = []
             if cloud_enabled and client.collection_exists(CLOUD_COLLECTION):
                 idx = VectorStoreIndex.from_vector_store(get_vector_store(CLOUD_COLLECTION), embed_model=embedder)
                 base_ret = get_base_retriever(idx, top_k=20)
                 cloud_retriever = base_ret
+                collections_used.append(CLOUD_COLLECTION)
 
             if local_enabled and client.collection_exists(LOCAL_COLLECTION):
                 idx = VectorStoreIndex.from_vector_store(get_vector_store(LOCAL_COLLECTION), embed_model=embedder)
                 base_ret = get_base_retriever(idx, top_k=20)
                 local_retriever = base_ret
+                collections_used.append(LOCAL_COLLECTION)
+
+            tracer.log_section("8. RETRIEVAL MODE", {
+                "mode": "MULTI-COLLECTION",
+                "collections_used": collections_used,
+                "retriever_top_k": 20,
+                "reranker_top_n": 5,
+                "query_sent_to_retriever": retrieval_query,
+            })
 
             multi_retriever = MultiCollectionRetriever(cloud_retriever, local_retriever)
             reranker = get_cross_encoder_reranker(top_n=5)
             engine = build_query_engine(multi_retriever, reranker)
             
-            logger.info(f"Querying RAG engine with: {retrieval_query}")
-            response = engine.query(retrieval_query)
+            from llama_index.core import QueryBundle
+            
+            logger.info(f"Retrieving chunks for: {retrieval_query}")
+            nodes = engine.retrieve(QueryBundle(retrieval_query))
+            
+            # Filter garbage chunks so the LLM isn't confused by irrelevant context
+            filtered_nodes = [n for n in nodes if n.score is None or n.score >= 0.05]
+            
+            # If all chunks were garbage, LlamaIndex natively short-circuits and refuses to call the LLM, returning "Empty Response".
+            # We inject a dummy empty node with score=0.0 to force LlamaIndex to query the LLM using just the history block! 
+            # The score=0.0 ensures it gets cleanly excluded from the frontend hits below.
+            if not filtered_nodes:
+                from llama_index.core.schema import NodeWithScore, TextNode
+                dummy_node = TextNode(text="")
+                dummy_node.metadata = {"file_id": "dummy", "file_name": "dummy"}
+                filtered_nodes = [NodeWithScore(node=dummy_node, score=0.0)]
+            
+            logger.info(f"Synthesizing answer with history injected context over {len(filtered_nodes)} relevant nodes...")
+            response = engine.synthesize(QueryBundle(llm_query), filtered_nodes)
         
+        # ── Log ALL raw source nodes from the response ──
+        tracer.log_nodes("9. SOURCE NODES (after reranking)", response.source_nodes)
+
+        # ── Log the exact context the LLM received ──
+        context_texts = []
+        for node in response.source_nodes:
+            try:
+                ctx = node.node.get_content()
+                meta = node.node.metadata
+                context_texts.append({
+                    "file": meta.get("file_name", "?"),
+                    "section": meta.get("section_header", ""),
+                    "score": round(node.score, 4) if node.score else None,
+                    "text": ctx,
+                })
+            except Exception:
+                pass
+        tracer.log_section("10. CONTEXT ASSEMBLED FOR LLM", context_texts)
+
+        # ── Log the raw LLM response ──
+        raw_response = str(response)
+        tracer.log_text("11. RAW LLM RESPONSE", raw_response)
+
         # Parse Source Nodes for frontend
         hits = []
         seen_fids = set()
@@ -257,6 +335,7 @@ def search(request):
 
             if fid not in seen_fids:
                 if score < 0.05:
+                    tracer.log_text("12. FILTERED OUT (score < 0.05)", f"{meta.get('file_name')} — score: {score}")
                     continue
                 
                 seen_fids.add(fid)
@@ -279,6 +358,13 @@ def search(request):
         if not answer_str or answer_str == "None":
             answer_str = "I could not find relevant information regarding this in the indexed files."
 
+        tracer.log_section("13. FINAL RESPONSE TO FRONTEND", {
+            "answer": answer_str,
+            "hits_count": len(hits),
+            "hits": [{"name": h["name"], "score": h["score"], "section": h.get("section", "")} for h in hits],
+        })
+        tracer.flush()
+
         return JsonResponse({
             "query": query,
             "answer": answer_str,
@@ -293,7 +379,10 @@ def search(request):
         
     except Exception as exc:
         import traceback
-        logger.error("New LlamaIndex Search error: %s\n%s", exc, traceback.format_exc())
+        tb = traceback.format_exc()
+        logger.error("New LlamaIndex Search error: %s\n%s", exc, tb)
+        tracer.log_text("ERROR — PIPELINE CRASHED", f"{exc}\n\n{tb}")
+        tracer.flush()
         return JsonResponse({
             "query": query,
             "answer": None,
@@ -307,7 +396,7 @@ def search(request):
         })
 
 
-def _file_specific_query(query, file_match, client, embedder, cloud_enabled, local_enabled):
+def _file_specific_query(query, llm_query, file_match, client, embedder, cloud_enabled, local_enabled):
     """Handle queries about a specific file — fetch all its chunks + summary
     and run the query engine over just that file's content."""
     file_id = file_match["file_id"]
@@ -320,9 +409,24 @@ def _file_specific_query(query, file_match, client, embedder, cloud_enabled, loc
     base_ret = get_base_retriever(idx, top_k=30)
     reranker = get_cross_encoder_reranker(top_n=8)
     engine = build_query_engine(base_ret, reranker)
+    from llama_index.core import QueryBundle
     
-    # Query with the original query (not rewritten, since it's file-targeted)
-    return engine.query(query)
+    # Retrieve with the original query, synthesize with the history-aware query
+    nodes = engine.retrieve(QueryBundle(query))
+    
+    # Filter garbage chunks to prevent conversational hallucinations
+    filtered_nodes = [n for n in nodes if n.score is None or n.score >= 0.05]
+    
+    if not filtered_nodes:
+        from llama_index.core.schema import NodeWithScore, TextNode
+        dummy_node = TextNode(text="")
+        dummy_node.metadata = {"file_id": "dummy", "file_name": "dummy"}
+        filtered_nodes = [NodeWithScore(node=dummy_node, score=0.0)]
+    
+    # Note: LlamaIndex response object usually carries source_nodes, so we overwrite it back to `nodes`
+    # or pass `filtered_nodes` directly to synthesize. But `tracer.log_nodes` reads from `response.source_nodes`
+    # and if we pass filtered_nodes to synthesize, `response.source_nodes` will correctly reflect only the nodes we actually sent!
+    return engine.synthesize(QueryBundle(llm_query), filtered_nodes)
 
 # LLM Status endpoint remains the same since it's just Ollama generic checks
 def llm_status(request):
