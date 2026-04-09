@@ -12,7 +12,7 @@ def test_strict_citation_prompt_format():
     
     assert "using ONLY the provided context" in template_str
     assert "I could not find relevant information" in template_str
-    assert "strict citations" in template_str
+    assert "Strictly cite" in template_str
     assert "[Source:" in template_str
 
 from llama_index.core.query_engine import RetrieverQueryEngine

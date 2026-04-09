@@ -29,6 +29,7 @@
             <th>Indexed File</th>
             <th style="width: 120px;">Source</th>
             <th style="width: 140px;">Status</th>
+            <th style="width: 100px;">Summary</th>
             <th style="width: 140px;">Last Modified</th>
           </tr>
         </thead>
@@ -145,4 +146,68 @@
 }
 .badge-local { background: rgba(52, 211, 153, 0.15); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.2); }
 .badge-cloud { background: rgba(59, 130, 246, 0.15); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.2); }
+
+/* ── Summary Styles ────────────────────────────────────────── */
+.summary-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: none;
+    background: none;
+}
+.summary-badge.has-summary {
+    background: rgba(139, 92, 246, 0.15);
+    color: #a78bfa;
+    border: 1px solid rgba(139, 92, 246, 0.25);
+}
+.summary-badge.has-summary:hover {
+    background: rgba(139, 92, 246, 0.25);
+}
+.summary-badge.no-summary {
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-dim);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.summary-badge.no-summary:hover {
+    background: rgba(139, 92, 246, 0.1);
+    color: #a78bfa;
+    border-color: rgba(139, 92, 246, 0.2);
+}
+.summary-badge.generating {
+    background: rgba(245, 158, 11, 0.12);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.2);
+    pointer-events: none;
+}
+
+.summary-display {
+    background: linear-gradient(135deg, rgba(139,92,246,0.06), rgba(59,130,246,0.04));
+    border: 1px solid rgba(139, 92, 246, 0.15);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 12px;
+}
+.summary-display-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #a78bfa;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.summary-display-text {
+    font-size: 0.82rem;
+    line-height: 1.7;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+}
 </style>

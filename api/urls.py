@@ -30,6 +30,7 @@ urlpatterns = [
     path("rag/ingest",          rag.ingest),
     path("rag/search",          rag.search),
     path("rag/debug/indices",   rag.debug_indices),
+    path("rag/summary/generate", rag.generate_summary),
     path("rag/llm/status",      llm.status),
     path("rag/llm/config",      llm.config),
     # Local files

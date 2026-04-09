@@ -7,12 +7,13 @@ logger = logging.getLogger(__name__)
 def get_hierarchical_parser() -> HierarchicalNodeParser:
     """
     Returns a HierarchicalNodeParser. 
-    This creates parent chunks (1024 tokens) and child chunks (256 tokens).
+    This creates parent chunks (1024 tokens) and child chunks (512 tokens).
     The DB searches the dense/precise children, but LLM context uses the massive parent blocks.
+    Overlap of 64 tokens (~12%) preserves sentence continuity across chunk boundaries.
     """
     return HierarchicalNodeParser.from_defaults(
-        chunk_sizes=[1024, 256],
-        chunk_overlap=32  # overlap for safety
+        chunk_sizes=[1024, 512],
+        chunk_overlap=64
     )
 
 def chunk_documents(documents: list[Document]) -> list[BaseNode]:

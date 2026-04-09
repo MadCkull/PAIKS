@@ -17,7 +17,7 @@ from api.services.rag.ingestion.chunking import chunk_documents
 from api.services.rag.ingestion.pipeline import ingest_nodes_to_collection
 from api.services.rag.retrieval.hybrid import get_base_retriever
 from api.services.rag.retrieval.reranker import get_cross_encoder_reranker
-from api.services.rag.generation.engine import build_query_engine, classify_intent, get_general_response
+from api.services.rag.generation.engine import build_query_engine
 from api.services.rag.ingestion.embedder import get_embedder
 
 from llama_index.core import VectorStoreIndex, QueryBundle
@@ -189,58 +189,60 @@ def search(request):
     if not query:
         return JsonResponse({"error": "query is required"}, status=400)
 
+    history = payload.get("history", [])  # optional conversation context
+
     app_settings = load_app_settings()
     cloud_enabled = app_settings.get("cloud_enabled", True)
     local_enabled = app_settings.get("local_enabled", True)
 
-    # 1. Deterministic Intent Routing
-    intent = classify_intent(query)
-    logger.info(f"Classified intent: {intent} for query: {query}")
+    # 1. Query Intelligence Layer
+    from api.services.rag.retrieval.query_rewriter import (
+        rewrite_query, detect_filename_query, get_known_files_from_qdrant,
+    )
 
-    if intent == "GENERAL":
-        answer_str = get_general_response(query)
-        return JsonResponse({
-            "query": query,
-            "answer": answer_str,
-            "answer_model": "LlamaIndex Classifier (General)",
-            "answer_error": None,
-            "results": [],
-            "total": 0,
-            "source": "conversational",
-            "indexed": True,
-            "settings": app_settings,
-        })
+    # Check if user is asking about a specific file
+    known_files = get_known_files_from_qdrant()
+    file_match = detect_filename_query(query, known_files)
 
-    # 2. RAG Pathway (SEARCH)
+    # Rewrite query for better retrieval (unless it's a filename-specific query)
+    retrieval_query = query
+    if not file_match:
+        retrieval_query = rewrite_query(query, history if history else None)
+
+    # 2. Always-Retrieve RAG Pathway (no routing decision)
     try:
-        cloud_retriever = None
-        local_retriever = None
-        
-        # Build individual hybrid retrievers if collections exist
         from api.services.rag.indexer import get_qdrant_client
         
         client = get_qdrant_client()
         embedder = get_embedder()
 
-        if cloud_enabled and client.collection_exists(CLOUD_COLLECTION):
-            idx = VectorStoreIndex.from_vector_store(get_vector_store(CLOUD_COLLECTION), embed_model=embedder)
-            from api.services.rag.retrieval.hybrid import get_base_retriever
-            base_ret = get_base_retriever(idx, top_k=20)
-            cloud_retriever = base_ret
+        # If a specific file was detected, do metadata-filtered retrieval
+        if file_match:
+            logger.info(f"File-specific retrieval for: {file_match.get('file_name')}")
+            response = _file_specific_query(
+                query, file_match, client, embedder, cloud_enabled, local_enabled
+            )
+        else:
+            # Normal multi-collection retrieval with rewritten query
+            cloud_retriever = None
+            local_retriever = None
 
-        if local_enabled and client.collection_exists(LOCAL_COLLECTION):
-            idx = VectorStoreIndex.from_vector_store(get_vector_store(LOCAL_COLLECTION), embed_model=embedder)
-            from api.services.rag.retrieval.hybrid import get_base_retriever
-            base_ret = get_base_retriever(idx, top_k=20)
-            local_retriever = base_ret
+            if cloud_enabled and client.collection_exists(CLOUD_COLLECTION):
+                idx = VectorStoreIndex.from_vector_store(get_vector_store(CLOUD_COLLECTION), embed_model=embedder)
+                base_ret = get_base_retriever(idx, top_k=20)
+                cloud_retriever = base_ret
 
-        multi_retriever = MultiCollectionRetriever(cloud_retriever, local_retriever)
-        reranker = get_cross_encoder_reranker(top_n=5)
-        
-        engine = build_query_engine(multi_retriever, reranker)
-        
-        logger.info(f"Querying RAG engine: {query}")
-        response = engine.query(query)
+            if local_enabled and client.collection_exists(LOCAL_COLLECTION):
+                idx = VectorStoreIndex.from_vector_store(get_vector_store(LOCAL_COLLECTION), embed_model=embedder)
+                base_ret = get_base_retriever(idx, top_k=20)
+                local_retriever = base_ret
+
+            multi_retriever = MultiCollectionRetriever(cloud_retriever, local_retriever)
+            reranker = get_cross_encoder_reranker(top_n=5)
+            engine = build_query_engine(multi_retriever, reranker)
+            
+            logger.info(f"Querying RAG engine with: {retrieval_query}")
+            response = engine.query(retrieval_query)
         
         # Parse Source Nodes for frontend
         hits = []
@@ -251,11 +253,10 @@ def search(request):
             fid = meta.get("file_id") or meta.get("file_name", "unknown")
             score = round(node.score if node.score else 0.0, 3)
             
-            # Diagnostic Log: See exactly what the reranker thinks
-            logger.info(f"RAG Hit: {meta.get('file_name')} | Score: {score}")
+            logger.info(f"RAG Hit: {meta.get('file_name')} | Section: {meta.get('section_header', '')} | Score: {score}")
 
             if fid not in seen_fids:
-                if score < 0.05: # Lowered from 0.15 to prevent missing valid context
+                if score < 0.05:
                     continue
                 
                 seen_fids.add(fid)
@@ -270,6 +271,7 @@ def search(request):
                     "score": score,
                     "source": source_type,
                     "localPath": meta.get("local_path", ""),
+                    "section": meta.get("section_header", ""),
                     "relevance_hint": f"{'Cloud Match' if source_type == 'cloud' else 'Local Match'} · Reranked Score: {score}",
                 })
 
@@ -304,6 +306,24 @@ def search(request):
             "settings": app_settings,
         })
 
+
+def _file_specific_query(query, file_match, client, embedder, cloud_enabled, local_enabled):
+    """Handle queries about a specific file — fetch all its chunks + summary
+    and run the query engine over just that file's content."""
+    file_id = file_match["file_id"]
+    collection = file_match["collection"]
+    
+    # Build a retriever for just this collection
+    idx = VectorStoreIndex.from_vector_store(
+        get_vector_store(collection), embed_model=embedder
+    )
+    base_ret = get_base_retriever(idx, top_k=30)
+    reranker = get_cross_encoder_reranker(top_n=8)
+    engine = build_query_engine(base_ret, reranker)
+    
+    # Query with the original query (not rewritten, since it's file-targeted)
+    return engine.query(query)
+
 # LLM Status endpoint remains the same since it's just Ollama generic checks
 def llm_status(request):
     try:
@@ -326,13 +346,13 @@ def llm_status(request):
 def debug_indices(request):
     """
     Returns a grouped, file-centric view of ALL raw data in Qdrant collections.
-    Calculates metrics and identifies empty/fragmented files.
+    Calculates metrics, identifies empty/fragmented files, and reports summary status.
     """
     import json
     from api.services.rag.indexer import get_qdrant_client, LOCAL_COLLECTION, CLOUD_COLLECTION
     client = get_qdrant_client()
     
-    # Structure: { file_id: { name, source, size, chunks: [] } }
+    # Structure: { file_id: { name, source, file_id, chunks: [], has_summary, summary_text } }
     grouped_data = {}
     
     def fetch_all_from_collection(col_name):
@@ -352,13 +372,18 @@ def debug_indices(request):
             for p in points:
                 payload = p.payload
                 fid = payload.get("file_id") or "unknown"
+                is_summary = payload.get("is_summary", False)
                 
                 if fid not in grouped_data:
                     grouped_data[fid] = {
+                        "file_id": fid,
                         "name": payload.get("file_name", "Unknown File"),
-                        "source": col_name.split("_")[1], # local or cloud
+                        "source": col_name.split("_")[1],
+                        "collection": col_name,
                         "modified": payload.get("modified_time", ""),
-                        "chunks": []
+                        "chunks": [],
+                        "has_summary": False,
+                        "summary_text": None,
                     }
                 
                 # Extract clean text
@@ -369,10 +394,15 @@ def debug_indices(request):
                         text = node_data.get("text")
                     except: pass
                 
-                grouped_data[fid]["chunks"].append({
-                    "id": p.id,
-                    "text": text or "[Empty snippet]"
-                })
+                if is_summary:
+                    grouped_data[fid]["has_summary"] = True
+                    grouped_data[fid]["summary_text"] = text or ""
+                else:
+                    grouped_data[fid]["chunks"].append({
+                        "id": p.id,
+                        "text": text or "[Empty snippet]",
+                        "section": payload.get("section_header", ""),
+                    })
                 
             if next_offset is None:
                 break
@@ -380,20 +410,18 @@ def debug_indices(request):
     fetch_all_from_collection(LOCAL_COLLECTION)
     fetch_all_from_collection(CLOUD_COLLECTION)
     
-    # Convert to sorted list for frontend
-    # Sort by Source (Local first), then File Name
     sort_priority = {"local": 0, "cloud": 1}
     result_list = sorted(
         grouped_data.values(), 
         key=lambda x: (sort_priority.get(x["source"], 99), x["name"].lower())
     )
     
-    # Summary Metrics
     metrics = {
         "total_files": len(result_list),
         "local_count": sum(1 for x in result_list if x["source"] == "local"),
         "cloud_count": sum(1 for x in result_list if x["source"] == "cloud"),
-        "total_chunks": sum(len(x["chunks"]) for x in result_list)
+        "total_chunks": sum(len(x["chunks"]) for x in result_list),
+        "summaries_generated": sum(1 for x in result_list if x["has_summary"]),
     }
             
     return JsonResponse({
@@ -416,3 +444,101 @@ def save_llm_config(request):
         return JsonResponse({"status": "saved"})
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=400)
+
+
+# --- SUMMARY GENERATION ENDPOINTS ---
+
+def generate_summary(request):
+    """Generate a document summary for a specific file_id.
+    POST body: { "file_id": "...", "collection": "paiks_local_index" }
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    try:
+        payload = json.loads(request.body)
+    except ValueError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    file_id = payload.get("file_id", "").strip()
+    collection = payload.get("collection", "").strip()
+
+    if not file_id or not collection:
+        return JsonResponse({"error": "file_id and collection are required"}, status=400)
+
+    from api.services.rag.indexer import get_qdrant_client
+    from api.services.rag.ingestion.summary import generate_summary_text, store_summary_node
+
+    client = get_qdrant_client()
+    if not client.collection_exists(collection):
+        return JsonResponse({"error": f"Collection '{collection}' not found"}, status=404)
+
+    # Fetch all regular chunks for this file
+    chunk_texts = []
+    file_name = "Unknown"
+    source_type = "local"
+
+    try:
+        from qdrant_client.models import Filter, FieldCondition, MatchValue
+        next_offset = None
+        while True:
+            points, next_offset = client.scroll(
+                collection_name=collection,
+                scroll_filter=Filter(must=[
+                    FieldCondition(key="file_id", match=MatchValue(value=file_id)),
+                ]),
+                limit=100,
+                offset=next_offset,
+                with_payload=True,
+                with_vectors=False,
+            )
+            for p in points:
+                pl = p.payload
+                if pl.get("is_summary", False):
+                    continue
+                file_name = pl.get("file_name", file_name)
+                source_type = pl.get("source", source_type)
+                text = pl.get("text") or pl.get("content")
+                if not text and "_node_content" in pl:
+                    try:
+                        import json as _json
+                        nd = _json.loads(pl["_node_content"])
+                        text = nd.get("text")
+                    except Exception:
+                        pass
+                if text:
+                    chunk_texts.append(text)
+            if next_offset is None:
+                break
+    except Exception as e:
+        return JsonResponse({"error": f"Failed to read chunks: {e}"}, status=500)
+
+    if not chunk_texts:
+        return JsonResponse({"error": "No chunks found for this file"}, status=404)
+
+    # Generate summary via LLM
+    try:
+        summary = generate_summary_text(chunk_texts, file_name)
+    except Exception as e:
+        logger.error(f"Summary generation failed for {file_name}: {e}")
+        return JsonResponse({"error": f"LLM generation failed: {e}"}, status=500)
+
+    # Store in Qdrant
+    try:
+        store_summary_node(
+            summary_text=summary,
+            file_id=file_id,
+            filename=file_name,
+            source=source_type,
+            collection_name=collection,
+        )
+    except Exception as e:
+        logger.error(f"Summary storage failed for {file_name}: {e}")
+        return JsonResponse({"error": f"Storage failed: {e}"}, status=500)
+
+    return JsonResponse({
+        "status": "generated",
+        "file_id": file_id,
+        "file_name": file_name,
+        "summary": summary,
+    })

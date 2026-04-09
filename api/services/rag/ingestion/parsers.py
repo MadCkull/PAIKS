@@ -56,9 +56,13 @@ def parse_cloud_file(service, file_info: dict) -> Optional[Document]:
                 "mime_type": mime,
                 "web_view_link": file_info.get("link", ""),
                 "modified_time": file_info.get("modified", ""),
+                "is_summary": False,
+                "chunk_index": 0,
+                "total_chunks": 0,
+                "section_header": "",
             },
-            excluded_llm_metadata_keys=["file_id", "source", "mime_type", "web_view_link"],
-            excluded_embed_metadata_keys=["file_id", "web_view_link", "modified_time"],
+            excluded_llm_metadata_keys=["file_id", "source", "mime_type", "web_view_link", "is_summary", "chunk_index", "total_chunks"],
+            excluded_embed_metadata_keys=["file_id", "web_view_link", "modified_time", "is_summary", "chunk_index", "total_chunks"],
         )
         return doc
     except Exception as e:
@@ -92,9 +96,13 @@ def parse_local_file(file_info: dict) -> Optional[Document]:
                 "source": "local",
                 "local_path": local_path,
                 "modified_time": file_info.get("modified", ""),
+                "is_summary": False,
+                "chunk_index": 0,
+                "total_chunks": 0,
+                "section_header": "",
             },
-            excluded_llm_metadata_keys=["file_id", "source", "local_path"],
-            excluded_embed_metadata_keys=["file_id", "local_path", "modified_time"],
+            excluded_llm_metadata_keys=["file_id", "source", "local_path", "is_summary", "chunk_index", "total_chunks"],
+            excluded_embed_metadata_keys=["file_id", "local_path", "modified_time", "is_summary", "chunk_index", "total_chunks"],
         )
         return doc
     except Exception as e:

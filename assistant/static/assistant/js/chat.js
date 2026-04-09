@@ -3,18 +3,20 @@ function formatAnswer(text) {
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
   
-  // Minimal numeric citation mapping (Stealth Mode)
+  // Minimal numeric citation mapping — supports [Source: file → section] and [Source: file]
   const citations = [];
-  html = html.replace(/\[Source:\s*([^\]]+)\]/g, (match, p1) => {
+  html = html.replace(/\[Source:\s*([^\]→]+?)(?:\s*→\s*([^\]]+?))?\]/g, (match, p1, p2) => {
     const filename = p1.trim();
-    let index = citations.indexOf(filename);
+    const section = p2 ? p2.trim() : '';
+    const displayKey = section ? `${filename} → ${section}` : filename;
+    let index = citations.indexOf(displayKey);
     if (index === -1) {
-        citations.push(filename);
+        citations.push(displayKey);
         index = citations.length - 1;
     }
     const displayNum = index + 1;
-    // Single line tag to avoid \n -> <br> clashes
-    return `<sup class="citation-minimal" onclick="window.openSourcesFromCitation('${escapeHtml(filename)}')" title="${escapeHtml(filename)}">${displayNum}</sup>`;
+    const tooltip = escapeHtml(displayKey);
+    return `<sup class="citation-minimal" onclick="window.openSourcesFromCitation('${escapeHtml(filename)}')" title="${tooltip}">${displayNum}</sup>`;
   });
 
   html = html.replace(/(?:^|<br>)[-•]\s+(.+?)(?=<br>|$)/g, '<li>$1</li>');
@@ -93,10 +95,22 @@ async function ragSearch(queryOverride) {
   const typing = showTypingIndicator();
 
   try {
+    // Gather conversation history for follow-up awareness (last 6 messages)
+    let history = [];
+    if (typeof _activeSid !== 'undefined' && _activeSid && typeof _sessions !== 'undefined') {
+      const sess = _sessions[_activeSid];
+      if (sess && sess.messages) {
+        history = sess.messages.slice(-6).map(m => ({
+          role: m.role || 'user',
+          content: m.text || m.content || ''
+        }));
+      }
+    }
+
     const res = await fetchWithTimeout(`${API_BASE}/rag/search`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query }),
+      body: JSON.stringify({ query, history }),
     }, 300000); 
     const data = await res.json();
     removeTypingIndicator();
@@ -433,6 +447,7 @@ window.openKnowledgeInspector = async function() {
                 <div class="metric-pill"><i class="fas fa-hdd"></i> Local: <b>${m.local_count || 0}</b></div>
                 <div class="metric-pill"><i class="fas fa-cloud"></i> Cloud: <b>${m.cloud_count || 0}</b></div>
                 <div class="metric-pill"><i class="fas fa-layer-group"></i> Total Chunks: <b>${m.total_chunks || 0}</b></div>
+                <div class="metric-pill"><i class="fas fa-scroll"></i> Summaries: <b>${m.summaries_generated || 0}</b></div>
             `;
         }
 
@@ -464,6 +479,30 @@ function renderInspectorGrouped(files) {
         const chunkCount = f.chunks?.length || 0;
         const statusClass = chunkCount > 0 ? "badge-status-ok" : "badge-status-warn";
         const statusText = chunkCount > 0 ? `${chunkCount} chunks` : "EMPTY / ERROR";
+
+        // Summary badge
+        let summaryBadge;
+        if (f.has_summary) {
+            summaryBadge = `<button class="summary-badge has-summary" onclick="event.stopPropagation(); window.toggleInspectorRow(${idx})" title="View summary">
+                <i class="fas fa-check-circle"></i> Generated
+            </button>`;
+        } else {
+            summaryBadge = `<button class="summary-badge no-summary" id="sum-btn-${idx}" onclick="event.stopPropagation(); window.generateFileSummary(${idx})" title="Generate summary for this file">
+                <i class="fas fa-magic"></i> Generate
+            </button>`;
+        }
+
+        // Summary display block (shown inside expansion row)
+        let summaryBlock = '';
+        if (f.has_summary && f.summary_text) {
+            summaryBlock = `
+                <div class="summary-display" id="summary-block-${idx}">
+                    <div class="summary-display-header">
+                        <i class="fas fa-scroll"></i> Document Summary
+                    </div>
+                    <div class="summary-display-text">${escapeHtml(f.summary_text)}</div>
+                </div>`;
+        }
         
         return `
             <tr class="file-row" onclick="window.toggleInspectorRow(${idx})">
@@ -471,15 +510,18 @@ function renderInspectorGrouped(files) {
                 <td style="font-weight:600; padding-left: 0;">${escapeHtml(f.name)}</td>
                 <td><span class="badge-source badge-${f.source}">${f.source}</span></td>
                 <td><span class="badge-status ${statusClass}">${statusText}</span></td>
+                <td>${summaryBadge}</td>
                 <td style="color:var(--text-dim); font-size: 0.75rem;">${formatDate(f.modified)}</td>
             </tr>
-            <tr class="chunk-expansion-row hidden" id="chunk-row-${idx}" onclick="window.toggleInspectorRow(${idx})">
-                <td colspan="5">
-                    <div class="chunk-container">
+            <tr class="chunk-expansion-row hidden" id="chunk-row-${idx}">
+                <td colspan="6">
+                    <div class="chunk-container" onclick="event.stopPropagation()">
+                        ${summaryBlock}
+                        <div id="summary-inline-${idx}"></div>
                         ${f.chunks.map((c, cIdx) => `
                             <div class="chunk-item">
                                 <div class="chunk-meta">
-                                    <span>Snippet #${cIdx + 1}</span>
+                                    <span>Snippet #${cIdx + 1}${c.section ? ` · ${escapeHtml(c.section)}` : ''}</span>
                                     <span>ID: ${c.id?.toString().substring(0,8)}...</span>
                                 </div>
                                 <div class="chunk-content-raw">${escapeHtml(c.text)}</div>
@@ -501,6 +543,76 @@ window.toggleInspectorRow = function(idx) {
     if (row) {
         const isHidden = row.classList.toggle("hidden");
         parent.classList.toggle("expanded", !isHidden);
+    }
+};
+
+// --- Summary Generation ---
+window.generateFileSummary = async function(idx) {
+    const files = window._cachedInspectorFiles || [];
+    const f = files[idx];
+    if (!f || !f.file_id || !f.collection) return;
+
+    const btn = document.getElementById(`sum-btn-${idx}`);
+    if (btn) {
+        btn.className = "summary-badge generating";
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating…';
+    }
+
+    try {
+        const res = await fetchWithTimeout(`${API_BASE}/rag/summary/generate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-CSRFToken": getCsrfToken() },
+            body: JSON.stringify({ file_id: f.file_id, collection: f.collection }),
+        }, 120000);
+
+        const data = await res.json();
+
+        if (data.error) {
+            if (btn) {
+                btn.className = "summary-badge no-summary";
+                btn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Failed';
+            }
+            showToast(`Summary failed: ${data.error}`, "error");
+            return;
+        }
+
+        // Update cached data
+        f.has_summary = true;
+        f.summary_text = data.summary;
+
+        // Update the button to show success
+        if (btn) {
+            btn.className = "summary-badge has-summary";
+            btn.innerHTML = '<i class="fas fa-check-circle"></i> Generated';
+            btn.onclick = function(e) { e.stopPropagation(); window.toggleInspectorRow(idx); };
+        }
+
+        // Insert the summary display inline
+        const inlineTarget = document.getElementById(`summary-inline-${idx}`);
+        if (inlineTarget) {
+            inlineTarget.innerHTML = `
+                <div class="summary-display">
+                    <div class="summary-display-header">
+                        <i class="fas fa-scroll"></i> Document Summary
+                    </div>
+                    <div class="summary-display-text">${escapeHtml(data.summary)}</div>
+                </div>`;
+        }
+
+        // Expand the row to show the summary
+        const row = document.getElementById(`chunk-row-${idx}`);
+        if (row && row.classList.contains("hidden")) {
+            window.toggleInspectorRow(idx);
+        }
+
+        showToast(`Summary generated for "${f.name}"`, "success");
+
+    } catch (err) {
+        if (btn) {
+            btn.className = "summary-badge no-summary";
+            btn.innerHTML = '<i class="fas fa-magic"></i> Retry';
+        }
+        showToast(`Summary generation failed: ${err.message}`, "error");
     }
 };
 

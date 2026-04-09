@@ -77,23 +77,47 @@ def _extract_pdf_local(filepath: pathlib.Path) -> Optional[str]:
     return None
 
 def _extract_docx_local(filepath: pathlib.Path) -> Optional[str]:
-    """Clean extraction from .docx using python-docx."""
+    """Structure-preserving extraction from .docx using python-docx.
+    Headings are prefixed with markdown-style markers (## Heading) so the
+    chunker gets natural break points and section_header detection works.
+    """
     try:
         import docx as docx_lib
         doc = docx_lib.Document(str(filepath))
-        parts = []
-        for p in doc.paragraphs:
-            if p.text.strip():
-                parts.append(p.text)
-        for table in doc.tables:
-            for row in table.rows:
-                row_text = [cell.text.strip() for cell in row.cells if cell.text.strip()]
-                if row_text:
-                    parts.append(" | ".join(row_text))
-        return "\n".join(parts).strip() if parts else None
+        return _docx_to_structured_text(doc)
     except Exception as e:
         logger.warning(f"DOCX extraction failed: {e}")
         return None
+
+
+def _docx_to_structured_text(doc) -> Optional[str]:
+    """Shared helper: converts a python-docx Document into structured text
+    with markdown heading markers preserved."""
+    parts = []
+    for p in doc.paragraphs:
+        text = p.text.strip()
+        if not text:
+            continue
+        # Detect heading styles (Heading 1 → #, Heading 2 → ##, etc.)
+        style_name = (p.style.name or "").lower()
+        if style_name.startswith("heading"):
+            try:
+                level = int(style_name.replace("heading", "").strip())
+                level = min(max(level, 1), 6)  # clamp to 1-6
+            except ValueError:
+                level = 2  # default to ## for ambiguous heading styles
+            parts.append(f"\n{'#' * level} {text}")
+        elif style_name == "title":
+            parts.append(f"\n# {text}")
+        else:
+            parts.append(text)
+    # Extract tables as pipe-delimited rows
+    for table in doc.tables:
+        for row in table.rows:
+            row_text = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+            if row_text:
+                parts.append(" | ".join(row_text))
+    return "\n".join(parts).strip() if parts else None
 
 def _extract_spreadsheet_local(filepath: pathlib.Path) -> Optional[str]:
     """Extract rows from spreadsheets into a structured string format."""
@@ -132,7 +156,7 @@ def _extract_pdf_from_bytes(service, file_id) -> Optional[str]:
         return None
 
 def _extract_docx_from_bytes(service, file_id) -> Optional[str]:
-    """Download Drive DOCX into bytes and parse."""
+    """Download Drive DOCX into bytes and parse with structure preservation."""
     from googleapiclient.http import MediaIoBaseDownload
     buf = io.BytesIO()
     dl = MediaIoBaseDownload(buf, service.files().get_media(fileId=file_id))
@@ -144,6 +168,6 @@ def _extract_docx_from_bytes(service, file_id) -> Optional[str]:
     try:
         import docx as docx_lib
         doc = docx_lib.Document(buf)
-        return "\n".join([p.text for p in doc.paragraphs if p.text.strip()]).strip()
+        return _docx_to_structured_text(doc)
     except Exception:
         return None
