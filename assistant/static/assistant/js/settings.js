@@ -1,7 +1,7 @@
 let _pickerCurrentPath = "This PC";
 let _pickerSelectedPath = null;
 
-// ── Helper: is user in local-only mode? ──────────────────────
+// ── Helper: is local-only mode active? ──────────────────────
 function isLocalMode() {
   return localStorage.getItem("paiks-mode") === "local";
 }
@@ -12,13 +12,13 @@ window.updateSettingsModal = async function() {
   const settingsState = {};
   const llmState = {};
 
-  // ── Fetch each resource independently — one failure doesn't kill the rest
+  // ── Fetch each resource independently  -  one failure doesn't kill the rest
   try {
     const res = await fetchWithTimeout(`${API_BASE}/auth/status`, {}, 5000);
     const data = await res.json();
     cloudConnectedState.connected = !!data.authenticated;
     cloudConnectedState.user = data.user;
-  } catch(_) { /* offline or unavailable — that's fine */ }
+  } catch(_) { /* offline or unavailable  -  that's fine */ }
 
   try {
     const res = await fetchWithTimeout(`${API_BASE}/drive/stats`, {}, 5000);
@@ -158,7 +158,7 @@ window.toggleSource = async function(type, enabled) {
         return;
       }
     } catch(_) {
-      showToast("Cannot verify Google connection — try again later", "error");
+      showToast("Cannot verify Google connection  -  try again later", "error");
       const toggle = document.getElementById("toggle-cloud");
       if (toggle) toggle.checked = false;
       return;

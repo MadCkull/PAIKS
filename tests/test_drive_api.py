@@ -1,5 +1,5 @@
 """
-Tests for api.views.drive — Selection endpoint, selections query, and stats.
+Tests for api.views.drive  -  Selection endpoint, selections query, and stats.
 """
 import pytest
 import json
@@ -35,7 +35,7 @@ def doc_factory(db):
 
 @pytest.mark.django_db
 class TestSelectionEndpoint:
-    """Tests POST /api/drive/selection — the core file selection toggle."""
+    """Tests POST /api/drive/selection  -  the core file selection toggle."""
 
     @patch("api.services.sync_manager._index_queue")
     @patch("api.services.sync_manager._compute_and_broadcast_health")
@@ -174,7 +174,7 @@ class TestSelectionEndpoint:
 
 @pytest.mark.django_db
 class TestSelectionsQuery:
-    """Tests GET /api/drive/selections — returns file state maps."""
+    """Tests GET /api/drive/selections  -  returns file state maps."""
 
     def test_returns_selected_and_disabled(self, rf, doc_factory):
         from api.views.drive import selections
@@ -228,7 +228,7 @@ class TestSelectionsQuery:
 
 @pytest.mark.django_db
 class TestStatsEndpoint:
-    """Tests GET /api/drive/stats — real-time system metrics."""
+    """Tests GET /api/drive/stats  -  real-time system metrics."""
 
     @patch("api.views.drive.get_creds", return_value=None)
     @patch("api.views.drive.load_app_settings", return_value={})

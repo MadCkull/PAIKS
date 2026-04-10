@@ -178,7 +178,7 @@ def files(request):
 def sync(request):
     creds = get_creds()
     if not creds:
-        return JsonResponse({"error": "Not authenticated — skipping cloud sync"}, status=200)
+        return JsonResponse({"error": "Not authenticated  -  skipping cloud sync"}, status=200)
 
     folder_cfg = load_folder_config()
     try:
@@ -254,7 +254,7 @@ def refresh_local_stats():
     return stats_cache
 
 def stats(request):
-    """Realtime stats endpoint — reads directly from DocumentTrack SQLite registry."""
+    """Realtime stats endpoint  -  reads directly from DocumentTrack SQLite registry."""
     creds = get_creds()
     app_settings = load_app_settings()
     from api.models import DocumentTrack

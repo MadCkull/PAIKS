@@ -137,7 +137,7 @@
   color: var(--accent);
 }
 
-/* Legacy bubble classes — kept so existing chat page still works */
+/* Legacy bubble classes  -  kept so existing chat page still works */
 .chat-msg { display: flex; gap: 12px; animation: fadeSlideUp .3s ease both; }
 .chat-msg-user { justify-content: flex-end; }
 .chat-msg-ai   { justify-content: flex-start; }
@@ -213,7 +213,7 @@
   box-shadow: 0 4px 12px var(--accent-glow);
 }
 
-/* Typing indicator — new style */
+/* Typing indicator  -  new style */
 .typing-indicator { display: flex; gap: 4px; padding: 8px 0; }
 .typing-dot {
   width: 6px; height: 6px; border-radius: 50%;
@@ -227,7 +227,7 @@
   40%           { transform: scale(1); }
 }
 
-/* Legacy typing indicator — kept for existing chat page */
+/* Legacy typing indicator  -  kept for existing chat page */
 .chat-typing { display: flex; gap: 12px; align-items: flex-start; animation: fadeSlideUp .3s ease both; }
 .chat-typing-dots {
   display: flex; gap: 5px; padding: 18px 22px;
@@ -252,7 +252,7 @@
 
 /* Chat input */
 
-/* === INPUT AREA — new glass design === */
+/* === INPUT AREA  -  new glass design === */
 
 .input-area {
   padding: 0 24px 24px;
@@ -328,7 +328,7 @@
   margin-top: 12px;
 }
 
-/* Legacy input styles — kept for existing chat page */
+/* Legacy input styles  -  kept for existing chat page */
 .chat-input-area { padding: 20px 28px; border-top: 1px solid var(--glass-border); background: var(--glass-bg); }
 .chat-input-row { display: flex; gap: 10px; align-items: center; background: var(--input-bg); border: 1.5px solid var(--input-border); border-radius: 999px; padding: 5px 5px 5px 22px; transition: all .2s; }
 .chat-input-row:focus-within { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-glow); }
@@ -464,7 +464,7 @@
 }
 
 
-/* === EMPTY STATE — new chat welcome screen === */
+/* === EMPTY STATE  -  new chat welcome screen === */
 
 .empty-state {
   display: flex;

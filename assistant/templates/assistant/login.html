@@ -172,7 +172,7 @@
             <span class="local-icon">💻</span>
             Use Locally
         </button>
-        <p class="local-note">No internet required. Use local files only.<br>You can connect Google Drive later from Settings.</p>
+        <p class="local-note">No internet required. Use local files only.<br>Google Drive can be connected later from Settings.</p>
 
         <div class="secure-badge">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -184,11 +184,11 @@
     </div>
 
     <script>
-        // Check if user already has a mode set
+        // Check if a mode is already set
         (function() {
             const mode = localStorage.getItem('paiks-mode');
             if (mode === 'local' || mode === 'drive') {
-                // Already chosen — go straight to app
+                // Already chosen  -  go straight to app
                 window.location.href = '/';
             }
         })();

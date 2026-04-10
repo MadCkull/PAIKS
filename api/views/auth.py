@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 OAUTH_REDIRECT_URI = os.environ.get("OAUTH_REDIRECT_URI", "http://localhost:8000/api/auth/callback")
 
-# Cached user info path — avoids hitting Google API on every status check
+# Cached user info path  -  avoids hitting Google API on every status check
 USER_CACHE_PATH = STORAGE_DIR / "user_cache.json"
 
 def _load_cached_user():
@@ -36,7 +36,7 @@ def _save_cached_user(user_info):
         pass
 
 def status(request):
-    """Auth status — fully local, no network calls."""
+    """Auth status  -  fully local, no network calls."""
     creds = get_creds()
     if not creds:
         # Even if creds refresh failed, check if we HAVE a token (offline scenario)
@@ -49,12 +49,12 @@ def status(request):
             })
         return JsonResponse({"authenticated": False, "user": None})
 
-    # We have valid creds — use cached user info (no network call)
+    # We have valid creds  -  use cached user info (no network call)
     cached_user = _load_cached_user()
     if cached_user:
         return JsonResponse({"authenticated": True, "user": cached_user})
 
-    # First time or cache missing — try to fetch (best effort, non-blocking)
+    # First time or cache missing  -  try to fetch (best effort, non-blocking)
     try:
         user = fetch_drive_user(creds)
         _save_cached_user(user)

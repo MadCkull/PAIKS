@@ -16,7 +16,7 @@ QA_PROMPT_TMPL = (
     "1. You MUST use the CONVERSATION HISTORY (if provided below) to understand context, follow-ups, and answer questions about the conversation itself.\n"
     "2. Answer the user's question using the DOCUMENT EXCERPTS and the CONVERSATION HISTORY.\n"
     "3. Cite every fact from excerpts with [Source: filename.ext] or [Source: filename.ext → Section Name]. Do not cite conversation history.\n"
-    "4. Be CONCISE — answer in 1-3 short paragraphs. Do NOT write essays.\n"
+    "4. Be CONCISE  -  answer in 1-3 short paragraphs. Do NOT write essays.\n"
     "5. If the history or excerpts contain the answer, USE THEM. Do not say you cannot find it.\n"
     "6. If the answer is completely missing, say so briefly and answer from your own knowledge.\n"
     "7. NEVER say things like 'It seems like you provided context' or 'Based on the context'. Just answer directly.\n"

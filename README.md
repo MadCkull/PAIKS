@@ -15,7 +15,7 @@
 
 ## 🌟 Overview
 
-**PAIKS** transforms your unstructured documents and Google Drive into a private, AI-powered knowledge base. By utilizing local LLMs and vector embeddings, PAIKS provides semantic intelligence, context-aware answers, and robust RAG capabilities—all while keeping your data 100% private.
+**PAIKS** transforms your unstructured documents and Google Drive into a private, AI-powered knowledge base. By utilizing local LLMs and vector embeddings, PAIKS provides semantic intelligence, context-aware answers, and robust RAG capabilities - all while keeping your data 100% private.
 
 > [!IMPORTANT]  
 > **Privacy First:** No cloud AI APIs are used. Your data, tokens, and embeddings stay entirely on your local machine.
@@ -93,7 +93,7 @@ PAIKS/
    ```
 
 3. **Configure Settings:**
-   - Copy the `.env.example` file to create a new `.env` file and adjust settings as needed.
+   - Copy the `.env.example` file to create a new `.env` file and adjust settings.
    - *(Optional)* Place your Google OAuth `credentials.json` in the root directory for Drive sync.
 
 4. **Launch the Application:**

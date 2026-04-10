@@ -29,13 +29,13 @@ def get_creds():
     if creds and creds.valid:
         return creds
 
-    # Token expired — try refresh with a short timeout
+    # Token expired  -  try refresh with a short timeout
     if creds and creds.expired and creds.refresh_token:
         try:
             from google.auth.transport.requests import Request
             import socket
             old_timeout = socket.getdefaulttimeout()
-            socket.setdefaulttimeout(5)  # 5 second max — don't hang offline
+            socket.setdefaulttimeout(5)  # 5 second max  -  don't hang offline
             try:
                 creds.refresh(Request())
                 TOKEN_PATH.write_text(creds.to_json())

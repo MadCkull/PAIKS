@@ -10,7 +10,7 @@ Each query produces a timestamped block showing:
   3. Filename detection result
   4. Query rewriting (before → after)
   5. Retriever configuration
-  6. Raw retrieved nodes (ALL of them — text, score, metadata)
+  6. Raw retrieved nodes (ALL of them  -  text, score, metadata)
   7. Reranked nodes (after cross-encoder)
   8. Exact context string assembled for LLM
   9. Full LLM prompt
@@ -86,7 +86,7 @@ class PipelineTracer:
     def log_nodes(self, title: str, nodes: list):
         """Log retriever/reranker nodes with full detail."""
         if not nodes:
-            self.sections.append((title, "(empty — no nodes returned)"))
+            self.sections.append((title, "(empty  -  no nodes returned)"))
             return
 
         entries = []
@@ -134,7 +134,7 @@ class PipelineTracer:
 
         lines = []
         lines.append(f"\n{'╔' + _sep('═')}")
-        lines.append(f"║  PIPELINE TRACE — {self.timestamp}")
+        lines.append(f"║  PIPELINE TRACE  -  {self.timestamp}")
         lines.append(f"║  Query: {self.query}")
         lines.append(f"║  Duration: {elapsed:.2f}s")
         lines.append(f"{'╚' + _sep('═')}")

@@ -2,10 +2,10 @@
 Query Intelligence Layer for the RAG retrieval pipeline.
 
 Provides two key capabilities:
-1. **Query Rewriting** — Rewrites user queries into retrieval-optimized form
+1. **Query Rewriting**  -  Rewrites user queries into retrieval-optimized form
    using the LLM, bridging the vocabulary gap between user phrasing and
    document content.
-2. **Filename Detection** — If the query references a known indexed file,
+2. **Filename Detection**  -  If the query references a known indexed file,
    triggers metadata-filtered retrieval instead of broad vector search.
 
 Both accept optional conversation history for follow-up awareness.

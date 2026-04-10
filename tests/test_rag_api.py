@@ -105,7 +105,7 @@ def test_rag_search_general_intent(
     mock_engine_builder, api_request_factory
 ):
     """
-    Validates that greetings still work — the unified prompt handles
+    Validates that greetings still work  -  the unified prompt handles
     general responses when no relevant context is found.
     """
     mock_known.return_value = []

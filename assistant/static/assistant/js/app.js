@@ -18,7 +18,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const mode = localStorage.getItem("paiks-mode"); // "local", "drive", or null
 
   if (!mode) {
-    // No mode chosen yet — send to login
+    // No mode chosen yet  -  send to login
     if (window.location.pathname !== "/login/") {
       window.location.href = "/login/";
       return;
@@ -26,29 +26,29 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   if (mode === "drive") {
-    // Drive mode — check if still authenticated
+    // Drive mode  -  check if still authenticated
     try {
       const authed = typeof checkAuthStatus === "function" ? await checkAuthStatus() : false;
       if (!authed) {
-        // Token gone/expired — still let them in but note they're offline
-        console.warn("Drive mode but not authenticated — running in degraded mode");
+        // Token gone/expired  -  still let them in but note they're offline
+        console.warn("Drive mode but not authenticated  -  running in degraded mode");
       }
       if (typeof updateConnectionUI === "function") {
         try { await updateConnectionUI(); } catch(_) {}
       }
     } catch(_) {
-      console.warn("Auth check failed — continuing offline");
+      console.warn("Auth check failed  -  continuing offline");
     }
   }
 
   // In local mode, skip all auth checks
   if (mode === "local") {
-    // Set sidebar user name to "Local User"
+    // Set sidebar display name to "Local User"
     const nameEl = document.getElementById("sidebar-user-name");
     if (nameEl) nameEl.textContent = "Local User";
   }
 
-  // Remove auth guard immediately — don't wait for anything
+  // Remove auth guard immediately  -  don't wait for anything
   if (typeof removeAuthGuard === "function") removeAuthGuard();
 
   // ── Feature Init (independent, non-blocking) ──────────────

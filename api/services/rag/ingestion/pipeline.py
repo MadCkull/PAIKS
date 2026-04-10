@@ -27,7 +27,7 @@ def _enrich_node_metadata(nodes: list) -> list:
     into each node's metadata after chunking.
     
     Groups nodes by file_id so each file gets its own sequential numbering.
-    The section_header is detected from the chunk's own text content — 
+    The section_header is detected from the chunk's own text content  -  
     if no heading is found in this chunk, it inherits the last known heading
     from previous chunks of the same file.
     """

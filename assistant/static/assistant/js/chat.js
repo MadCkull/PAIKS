@@ -3,7 +3,7 @@ function formatAnswer(text) {
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
   
-  // Minimal numeric citation mapping — supports [Source: file → section] and [Source: file]
+  // Minimal numeric citation mapping  -  supports [Source: file → section] and [Source: file]
   const citations = [];
   html = html.replace(/\[Source:\s*([^\]→]+?)(?:\s*→\s*([^\]]+?))?\]/g, (match, p1, p2) => {
     const filename = p1.trim();

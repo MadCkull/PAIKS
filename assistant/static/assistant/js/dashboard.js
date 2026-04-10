@@ -62,7 +62,7 @@ window.updateDashboardStats = async function() {
     const rag = await res.json();
     set("stat-embeddings", (rag.total_chunks || 0).toLocaleString());
   } catch(_) {
-    set("stat-embeddings", "—");
+    set("stat-embeddings", " - ");
   }
 
   // ── LLM Status (independent) ───────────────────────────────
@@ -75,7 +75,7 @@ window.updateDashboardStats = async function() {
       llmEl.style.color = llm.reachable ? "var(--color-success)" : "var(--color-error)";
     }
     const llmModel = document.getElementById("stat-llm-model");
-    if (llmModel) llmModel.textContent = llm.provider ? `${llm.provider} / ${llm.current_model || "—"}` : "";
+    if (llmModel) llmModel.textContent = llm.provider ? `${llm.provider} / ${llm.current_model || " - "}` : "";
   } catch(_) {
     const llmEl = document.getElementById("stat-llm");
     if (llmEl) { llmEl.textContent = "● Offline"; llmEl.style.color = "var(--color-error)"; }

@@ -1,4 +1,4 @@
-/* === SIDEBAR (always dark — user approved) === */
+/* === SIDEBAR (always dark  -  user approved) === */
 
 .sidebar {
   width: 260px;
@@ -220,7 +220,7 @@
 .sidebar.collapsed .history-item-body,
 .sidebar.collapsed .history-item-del { display: none; }
 
-/* Sidebar footer — user avatar + name */
+/* Sidebar footer  -  user avatar + name */
 .sidebar-footer {
   padding: 12px 16px;
   border-top: 1px solid var(--glass-border);
@@ -252,7 +252,7 @@
 .sidebar.collapsed .footer-btn #sidebar-user-name { display: none; }
 
 
-/* === LAYOUT — app shell === */
+/* === LAYOUT  -  app shell === */
 
 #app {
   display: flex;

@@ -1,5 +1,5 @@
 """
-Tests for api.services.sync_manager — Background sync engine, health computation,
+Tests for api.services.sync_manager  -  Background sync engine, health computation,
 debounce logic, stale job detection, and directory filtering.
 """
 import pytest
@@ -40,7 +40,7 @@ def doc_track_factory(db):
 
 @pytest.mark.django_db
 class TestComputeAndBroadcastHealth:
-    """Tests _compute_and_broadcast_health — the single source of truth for badge state."""
+    """Tests _compute_and_broadcast_health  -  the single source of truth for badge state."""
 
     def test_all_synced_returns_synced(self, doc_track_factory):
         from api.services.sync_manager import _compute_and_broadcast_health
@@ -172,7 +172,7 @@ class TestLocalFileHandler:
         )
 
         handler = LocalFileHandler()
-        f.write_text("changed content")  # Modify it
+        f.write_text("changed content")  # Simulate file change
         handler._handle_change(str(f))
 
         doc = DocumentTrack.objects.get(file_id=f"local__{f}")

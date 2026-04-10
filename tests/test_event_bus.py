@@ -1,5 +1,5 @@
 """
-Tests for api.services.event_bus — SSE broadcasting infrastructure.
+Tests for api.services.event_bus  -  SSE broadcasting infrastructure.
 """
 import pytest
 import queue

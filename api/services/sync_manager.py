@@ -262,7 +262,7 @@ def _index_worker():
                     continue
 
                 # STALE JOB CHECK: if the file changed again since this job was queued,
-                # skip this job — a newer job with the latest hash is already in the queue.
+                # skip this job  -  a newer job with the latest hash is already in the queue.
                 if expected_hash and doc.content_hash != expected_hash:
                     _index_queue.task_done()
                     continue
@@ -367,7 +367,7 @@ def _index_worker():
                         logger.info(f"{doc.name} indexed successfully.")
                         broadcast_event("sync_update", {"file_id": doc.file_id, "name": doc.name, "status": "synced"})
                     else:
-                        # File could not be read — this is an ERROR, not success
+                        # File could not be read  -  this is an ERROR, not success
                         doc.sync_status = "error"
                         doc.error_message = "Could not extract text (unsupported format or empty)"
                         doc.save()

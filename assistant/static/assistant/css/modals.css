@@ -73,7 +73,7 @@
 [data-theme="light"] .source-snippet { background: rgba(0, 0, 0, 0.03); }
 
 
-/* === SETTINGS — source cards, form, toggle switch === */
+/* === SETTINGS  -  source cards, form, toggle switch === */
 
 .source-card {
   display: flex;
@@ -186,7 +186,7 @@
 .divider { border: 0; border-top: 1px solid var(--glass-border); margin: 24px 0; }
 
 
-/* === FOLDER PICKER MODAL (legacy — kept for existing pages) === */
+/* === FOLDER PICKER MODAL (legacy  -  kept for existing pages) === */
 
 #folder-picker-modal {
   position: fixed; inset: 0; z-index: 1000;

@@ -206,7 +206,7 @@ def search(request):
         "local_enabled": local_enabled,
     })
 
-    # 1. Query Intelligence Layer (filename detection only — rewriter disabled)
+    # 1. Query Intelligence Layer (filename detection only  -  rewriter disabled)
     from api.services.rag.retrieval.query_rewriter import (
         detect_filename_query, get_known_files_from_qdrant,
     )
@@ -220,7 +220,7 @@ def search(request):
     file_match = detect_filename_query(query, known_files)
     tracer.log_section("5. FILENAME DETECTION", file_match if file_match else "(no filename match)")
 
-    # Use original query directly — LLM rewriter was destroying queries
+    # Use original query directly  -  LLM rewriter was destroying queries
     retrieval_query = query
     tracer.log_section("6. QUERY FOR RETRIEVAL", {
         "retrieval_query": retrieval_query,
@@ -335,7 +335,7 @@ def search(request):
 
             if fid not in seen_fids:
                 if score < 0.05:
-                    tracer.log_text("12. FILTERED OUT (score < 0.05)", f"{meta.get('file_name')} — score: {score}")
+                    tracer.log_text("12. FILTERED OUT (score < 0.05)", f"{meta.get('file_name')}  -  score: {score}")
                     continue
                 
                 seen_fids.add(fid)
@@ -381,7 +381,7 @@ def search(request):
         import traceback
         tb = traceback.format_exc()
         logger.error("New LlamaIndex Search error: %s\n%s", exc, tb)
-        tracer.log_text("ERROR — PIPELINE CRASHED", f"{exc}\n\n{tb}")
+        tracer.log_text("ERROR  -  PIPELINE CRASHED", f"{exc}\n\n{tb}")
         tracer.flush()
         return JsonResponse({
             "query": query,
@@ -397,7 +397,7 @@ def search(request):
 
 
 def _file_specific_query(query, llm_query, file_match, client, embedder, cloud_enabled, local_enabled):
-    """Handle queries about a specific file — fetch all its chunks + summary
+    """Handle queries about a specific file  -  fetch all its chunks + summary
     and run the query engine over just that file's content."""
     file_id = file_match["file_id"]
     collection = file_match["collection"]
