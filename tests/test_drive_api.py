@@ -1,5 +1,13 @@
 """
-Tests for api.views.drive  -  Selection endpoint, selections query, and stats.
+Tests for api.views.drive — Selection endpoint, selections query, and stats.
+
+Covers:
+  - File selection/deselection with queue effects
+  - Bulk selection processing
+  - Health broadcast triggers
+  - Selections query (selected/disabled/error/synced maps)
+  - Stats endpoint with mixed document states
+  - Invalid JSON error handling
 """
 import pytest
 import json
@@ -35,7 +43,7 @@ def doc_factory(db):
 
 @pytest.mark.django_db
 class TestSelectionEndpoint:
-    """Tests POST /api/drive/selection  -  the core file selection toggle."""
+    """Tests POST /api/drive/selection — the core file selection toggle."""
 
     @patch("api.services.sync_manager._index_queue")
     @patch("api.services.sync_manager._compute_and_broadcast_health")
@@ -169,12 +177,29 @@ class TestSelectionEndpoint:
         assert doc.sync_status == "pending"
         assert doc.is_selected is True
 
+    @patch("api.services.sync_manager._index_queue")
+    @patch("api.services.sync_manager._compute_and_broadcast_health")
+    def test_cloud_file_detection(self, mock_health, mock_q, rf):
+        """Cloud file IDs must be detected and stored with source='cloud'."""
+        from api.views.drive import selection
+
+        body = json.dumps({
+            "file_ids": ["cloud__abc123def"],
+            "is_selected": True
+        })
+        req = rf.post("/api/drive/selection", data=body, content_type="application/json")
+        selection(req)
+
+        from api.models import DocumentTrack
+        doc = DocumentTrack.objects.get(file_id="cloud__abc123def")
+        assert doc.source == "cloud"
+
 
 # ── Selections Query Tests ──────────────────────────────────────
 
 @pytest.mark.django_db
 class TestSelectionsQuery:
-    """Tests GET /api/drive/selections  -  returns file state maps."""
+    """Tests GET /api/drive/selections — returns file state maps."""
 
     def test_returns_selected_and_disabled(self, rf, doc_factory):
         from api.views.drive import selections
@@ -223,12 +248,24 @@ class TestSelectionsQuery:
 
         assert "local__old.txt" not in data["synced"]
 
+    def test_empty_db_returns_empty_lists(self, rf, db):
+        from api.views.drive import selections
+
+        req = rf.get("/api/drive/selections")
+        resp = selections(req)
+        data = json.loads(resp.content)
+
+        assert data["selected"] == []
+        assert data["disabled"] == []
+        assert data["errors"] == []
+        assert data["synced"] == []
+
 
 # ── Stats Endpoint Tests ───────────────────────────────────────
 
 @pytest.mark.django_db
 class TestStatsEndpoint:
-    """Tests GET /api/drive/stats  -  real-time system metrics."""
+    """Tests GET /api/drive/stats — real-time system metrics."""
 
     @patch("api.views.drive.get_creds", return_value=None)
     @patch("api.views.drive.load_app_settings", return_value={})
@@ -244,11 +281,11 @@ class TestStatsEndpoint:
         resp = stats(req)
         data = json.loads(resp.content)
 
-        assert data["indexed_total"] == 2  # a.txt + cloud__c
-        assert data["error_total"] == 1   # b.txt
-        assert data["disabled_total"] == 1 # d.txt
-        assert data["local_total"] == 3    # a, b, d
-        assert data["cloud_total"] == 1    # c
+        assert data["indexed_total"] == 2   # a.txt + cloud__c
+        assert data["error_total"] == 1     # b.txt
+        assert data["disabled_total"] == 1  # d.txt
+        assert data["local_total"] == 3     # a, b, d
+        assert data["cloud_total"] == 1     # c
 
     @patch("api.views.drive.get_creds", return_value=None)
     @patch("api.views.drive.load_app_settings", return_value={})

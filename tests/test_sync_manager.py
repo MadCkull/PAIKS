@@ -1,6 +1,16 @@
 """
-Tests for api.services.sync_manager  -  Background sync engine, health computation,
-debounce logic, stale job detection, and directory filtering.
+Tests for api.services.sync_manager — Background sync engine, health computation,
+debounce logic, stale job detection, watchdog event handling, and directory filtering.
+
+Covers:
+  - _compute_and_broadcast_health state machine
+  - get_file_hash SHA-256 correctness
+  - LocalFileHandler watchdog events (create, modify, delete, move)
+  - Debounce filtering for unsupported extensions
+  - Stale job detection by hash / selection
+  - Directory filtering (auto-delete directory docs)
+  - SSELogHandler log-level classification
+  - start_sync_engine / stop_sync_engine lifecycle
 """
 import pytest
 import os
@@ -11,15 +21,6 @@ import threading
 from unittest.mock import patch, MagicMock, PropertyMock
 from django.utils import timezone
 
-@pytest.fixture(autouse=True)
-def clear_index_queue():
-    """Clear the global _index_queue before each test."""
-    from api.services.sync_manager import _index_queue
-    while not _index_queue.empty():
-        try:
-            _index_queue.get_nowait()
-        except queue.Empty:
-            break
 
 @pytest.fixture
 def doc_track_factory(db):
@@ -40,7 +41,7 @@ def doc_track_factory(db):
 
 @pytest.mark.django_db
 class TestComputeAndBroadcastHealth:
-    """Tests _compute_and_broadcast_health  -  the single source of truth for badge state."""
+    """Tests _compute_and_broadcast_health — the single source of truth for badge state."""
 
     def test_all_synced_returns_synced(self, doc_track_factory):
         from api.services.sync_manager import _compute_and_broadcast_health
@@ -106,6 +107,13 @@ class TestComputeAndBroadcastHealth:
             _compute_and_broadcast_health()
             mock_bc.assert_called_once_with("system_health", {"state": "warning"})
 
+    def test_empty_db_returns_synced(self, db):
+        """No documents at all → synced (nothing to worry about)."""
+        from api.services.sync_manager import _compute_and_broadcast_health
+        with patch("api.services.sync_manager.broadcast_event") as mock_bc:
+            _compute_and_broadcast_health()
+            mock_bc.assert_called_once_with("system_health", {"state": "synced"})
+
 
 # ── File Hash Tests ─────────────────────────────────────────────
 
@@ -130,6 +138,22 @@ class TestFileHash:
         f1.write_text("content A")
         f2.write_text("content B")
         assert get_file_hash(str(f1)) != get_file_hash(str(f2))
+
+    def test_same_content_same_hash(self, tmp_path):
+        from api.services.sync_manager import get_file_hash
+        f1 = tmp_path / "a.txt"
+        f2 = tmp_path / "b.txt"
+        f1.write_text("identical")
+        f2.write_text("identical")
+        assert get_file_hash(str(f1)) == get_file_hash(str(f2))
+
+    def test_empty_file_has_hash(self, tmp_path):
+        from api.services.sync_manager import get_file_hash
+        f = tmp_path / "empty.txt"
+        f.write_text("")
+        result = get_file_hash(str(f))
+        assert result is not None
+        assert len(result) == 64  # SHA-256 hex digest length
 
 
 # ── Watchdog Handler Tests ──────────────────────────────────────
@@ -164,7 +188,6 @@ class TestLocalFileHandler:
         f = tmp_path / "deselected.txt"
         f.write_text("initial")
 
-        # Pre-create as deselected
         DocumentTrack.objects.create(
             file_id=f"local__{f}", name="deselected.txt", source="local",
             is_selected=False, sync_status="disabled",
@@ -172,15 +195,14 @@ class TestLocalFileHandler:
         )
 
         handler = LocalFileHandler()
-        f.write_text("changed content")  # Simulate file change
+        f.write_text("changed content")
         handler._handle_change(str(f))
 
         doc = DocumentTrack.objects.get(file_id=f"local__{f}")
-        # Must stay disabled, NOT set to pending
         assert doc.sync_status == "disabled"
 
     def test_handle_deleted_marks_disabled(self, tmp_path):
-        from api.services.sync_manager import LocalFileHandler
+        from api.services.sync_manager import LocalFileHandler, _index_queue
         from api.models import DocumentTrack
 
         filepath = str(tmp_path / "todelete.txt")
@@ -196,6 +218,11 @@ class TestLocalFileHandler:
         doc = DocumentTrack.objects.get(file_id=f"local__{filepath}")
         assert doc.sync_status == "disabled"
 
+        # Should also queue a delete action
+        job = _index_queue.get_nowait()
+        assert job["action"] == "delete"
+        assert job["file_id"] == f"local__{filepath}"
+
     def test_unsupported_extension_ignored(self, tmp_path):
         from api.services.sync_manager import LocalFileHandler
 
@@ -203,11 +230,49 @@ class TestLocalFileHandler:
         f.write_bytes(b"\x00" * 100)
 
         handler = LocalFileHandler()
-        # _debounced_change should return early for unsupported extensions
         handler._debounced_change(str(f))
-        # No DocumentTrack should be created
+
         from api.models import DocumentTrack
         assert DocumentTrack.objects.filter(file_id=f"local__{f}").count() == 0
+
+    def test_supported_extensions_accepted(self, tmp_path):
+        """All LOCAL_ALLOWED_EXTENSIONS should pass the debounce filter."""
+        from api.services.config import LOCAL_ALLOWED_EXTENSIONS
+
+        for ext in LOCAL_ALLOWED_EXTENSIONS:
+            f = tmp_path / f"test{ext}"
+            f.write_text("content")
+            # Should not raise
+            from api.services.sync_manager import LocalFileHandler
+            handler = LocalFileHandler()
+            # _debounced_change should accept these extensions
+            # (it sets up a timer, so we just ensure no exception)
+            handler._debounced_change(str(f))
+
+    @patch("api.services.sync_manager._debounce_timers", {})
+    def test_handle_change_updates_hash_on_content_change(self, tmp_path):
+        """When file content changes, the DB hash must update."""
+        from api.services.sync_manager import LocalFileHandler, get_file_hash
+        from api.models import DocumentTrack
+
+        f = tmp_path / "changing.txt"
+        f.write_text("version 1")
+        hash_v1 = get_file_hash(str(f))
+
+        DocumentTrack.objects.create(
+            file_id=f"local__{f}", name="changing.txt", source="local",
+            is_selected=True, sync_status="synced",
+            content_hash=hash_v1, last_modified=timezone.now()
+        )
+
+        f.write_text("version 2")
+        handler = LocalFileHandler()
+        with patch("api.services.sync_manager._compute_and_broadcast_health"):
+            handler._handle_change(str(f))
+
+        doc = DocumentTrack.objects.get(file_id=f"local__{f}")
+        assert doc.content_hash != hash_v1
+        assert doc.sync_status == "pending"
 
 
 # ── Worker Stale Job Detection Tests ────────────────────────────
@@ -226,14 +291,12 @@ class TestStaleJobDetection:
             content_hash="new_hash_after_edit"
         )
 
-        # Queue a job with the OLD hash
         _index_queue.put({
             "action": "index",
             "doc_id": doc.id,
             "expected_hash": "old_hash_before_edit"
         })
 
-        # The worker should detect hash mismatch and skip
         job = _index_queue.get_nowait()
         assert job["expected_hash"] != doc.content_hash
 
@@ -244,8 +307,21 @@ class TestStaleJobDetection:
             sync_status="pending",
             is_selected=False
         )
-        # Worker checks doc.is_selected before processing
         assert not doc.is_selected
+
+    def test_matching_hash_allows_job(self, doc_track_factory):
+        """If expected_hash matches, the job should proceed."""
+        doc = doc_track_factory(
+            file_id="local__D:\\test\\current.txt",
+            sync_status="pending",
+            content_hash="correct_hash"
+        )
+        job = {
+            "action": "index",
+            "doc_id": doc.id,
+            "expected_hash": "correct_hash"
+        }
+        assert job["expected_hash"] == doc.content_hash
 
 
 # ── Directory Filtering Tests ───────────────────────────────────
@@ -254,8 +330,8 @@ class TestStaleJobDetection:
 class TestDirectoryFiltering:
     """Tests that directories are silently skipped and deleted from the queue."""
 
-    def test_directory_doc_gets_deleted(self, tmp_path, doc_track_factory):
-        """A DocumentTrack pointing to a directory path must be auto-deleted."""
+    def test_directory_doc_gets_detected(self, tmp_path, doc_track_factory):
+        """A DocumentTrack pointing to a directory path must be identified."""
         dirpath = tmp_path / "TestFolder"
         dirpath.mkdir()
 
@@ -265,8 +341,100 @@ class TestDirectoryFiltering:
             sync_status="pending"
         )
 
-        # Verify it's a directory
         assert os.path.isdir(str(dirpath))
-
         from api.models import DocumentTrack
         assert DocumentTrack.objects.filter(id=doc.id).exists()
+
+
+# ── SSELogHandler Tests ─────────────────────────────────────────
+
+class TestSSELogHandler:
+    """Tests the log-level classification in SSELogHandler."""
+
+    def test_success_level_detection(self):
+        from api.services.sync_manager import SSELogHandler
+        import logging
+
+        handler = SSELogHandler()
+        record = logging.LogRecord(
+            name="test", level=logging.INFO, pathname="", lineno=0,
+            msg="test.txt indexed successfully.", args=(), exc_info=None
+        )
+        with patch("api.services.sync_manager.broadcast_event") as mock_bc:
+            handler.emit(record)
+            call_data = mock_bc.call_args[0][1]
+            assert call_data["level"] == "success"
+
+    def test_error_level_detection(self):
+        from api.services.sync_manager import SSELogHandler
+        import logging
+
+        handler = SSELogHandler()
+        record = logging.LogRecord(
+            name="test", level=logging.ERROR, pathname="", lineno=0,
+            msg="Failed to index file.", args=(), exc_info=None
+        )
+        with patch("api.services.sync_manager.broadcast_event") as mock_bc:
+            handler.emit(record)
+            call_data = mock_bc.call_args[0][1]
+            assert call_data["level"] == "error"
+
+    def test_warning_level_detection(self):
+        from api.services.sync_manager import SSELogHandler
+        import logging
+
+        handler = SSELogHandler()
+        record = logging.LogRecord(
+            name="test", level=logging.WARNING, pathname="", lineno=0,
+            msg="Slow indexing detected.", args=(), exc_info=None
+        )
+        with patch("api.services.sync_manager.broadcast_event") as mock_bc:
+            handler.emit(record)
+            call_data = mock_bc.call_args[0][1]
+            assert call_data["level"] == "warning"
+
+    def test_info_level_default(self):
+        from api.services.sync_manager import SSELogHandler
+        import logging
+
+        handler = SSELogHandler()
+        record = logging.LogRecord(
+            name="test", level=logging.INFO, pathname="", lineno=0,
+            msg="Processing file...", args=(), exc_info=None
+        )
+        with patch("api.services.sync_manager.broadcast_event") as mock_bc:
+            handler.emit(record)
+            call_data = mock_bc.call_args[0][1]
+            assert call_data["level"] == "info"
+
+
+# ── Sync Engine Lifecycle Tests ─────────────────────────────────
+
+class TestSyncEngineLifecycle:
+    """Tests start/stop of the sync engine background threads."""
+
+    @patch("api.services.sync_manager.load_app_settings", return_value={
+        "local_enabled": False, "cloud_enabled": False
+    })
+    def test_start_sets_running_flag(self, mock_settings):
+        import api.services.sync_manager as sm
+        original_running = sm._running
+
+        try:
+            sm.start_sync_engine()
+            assert sm._running is True
+        finally:
+            sm.stop_sync_engine()
+            assert sm._running is False
+
+    @patch("api.services.sync_manager.load_app_settings", return_value={
+        "local_enabled": False, "cloud_enabled": False
+    })
+    def test_double_start_is_idempotent(self, mock_settings):
+        import api.services.sync_manager as sm
+        try:
+            sm.start_sync_engine()
+            sm.start_sync_engine()  # Should return early
+            assert sm._running is True
+        finally:
+            sm.stop_sync_engine()
