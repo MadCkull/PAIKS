@@ -134,12 +134,14 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = []
 
 # Ensure WhiteNoise compresses and caches static files
+# For production, you can re-enable CompressedManifestStaticFilesStorage
+# after running python manage.py collectstatic
 STORAGES = {
     "default": {
         "BACKEND": "django.core.files.storage.FileSystemStorage",
     },
     "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage", # Removed Manifest strict caching
     },
 }
 

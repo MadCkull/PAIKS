@@ -34,3 +34,33 @@ class DocumentTrack(models.Model):
 
     def __str__(self):
         return f"[{self.source.upper()}] {self.name} - {self.sync_status}"
+
+class SyncJob(models.Model):
+    """
+    Outbox pattern queue for background processing.
+    Ensures that Qdrant index/delete operations are persistent and survive restarts.
+    """
+    ACTION_CHOICES = [
+        ('index', 'Index'),
+        ('delete', 'Delete'),
+    ]
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('processing', 'Processing'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+    ]
+
+    document = models.ForeignKey(DocumentTrack, on_delete=models.CASCADE, related_name='jobs')
+    action = models.CharField(max_length=10, choices=ACTION_CHOICES)
+    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='pending')
+    
+    error_message = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"{self.action.upper()} | {self.document.name} | {self.status}"

@@ -78,37 +78,65 @@ def selection(request):
         file_ids = payload.get("file_ids", [])
         is_selected = payload.get("is_selected", True)
         
-        from api.models import DocumentTrack
-        from api.services.sync_manager import _index_queue, _compute_and_broadcast_health
+        from django.db import transaction
+        from api.models import DocumentTrack, SyncJob
+        from api.services.sync_manager import _compute_and_broadcast_health
         from api.services.sync_manager import logger as sync_logger
         
+        # Build a fast mapping for Cloud File names
+        cloud_name_map = {}
+        try:
+            from api.services.config import load_cache
+            cache = load_cache()
+            if cache and "files" in cache:
+                for f in cache["files"]:
+                    cloud_name_map[f"cloud__{f['id']}"] = f.get("name", f['id'])
+        except Exception:
+            pass
+
         processed = 0
-        for fid in file_ids:
-            doc, created = DocumentTrack.objects.get_or_create(
-                file_id=fid,
-                defaults={
-                    "name": fid.split("__")[-1] if "__" in fid else fid,
-                    "source": "cloud" if fid.startswith("cloud__") else "local",
-                    "sync_status": "pending" if is_selected else "disabled",
-                    "is_selected": is_selected
-                }
-            )
-            if not created:
-                doc.is_selected = is_selected
-                if is_selected and doc.sync_status in ['disabled', 'error', 'pending']:
-                    doc.sync_status = "pending"
+        with transaction.atomic():
+            for fid in file_ids:
+                
+                # Determine correct fallback name based on source
+                if fid.startswith("cloud__"):
+                    default_name = cloud_name_map.get(fid, fid.replace("cloud__", "", 1))
+                else:
+                    import os
+                    path_part = fid.replace("local__", "", 1)
+                    default_name = os.path.basename(path_part) if path_part else fid
+
+                doc, created = DocumentTrack.objects.get_or_create(
+                    file_id=fid,
+                    defaults={
+                        "name": default_name,
+                        "source": "cloud" if fid.startswith("cloud__") else "local",
+                        "sync_status": "pending" if is_selected else "disabled",
+                        "is_selected": is_selected
+                    }
+                )
+                if not created:
+                    # Heal random alphanumeric names from previous bugs dynamically
+                    if doc.name != default_name and doc.source == "cloud" and not doc.name.endswith(('.txt', '.csv', '.doc', '.docx', '.pdf')):
+                        doc.name = default_name
+
+                    doc.is_selected = is_selected
+                    if is_selected and doc.sync_status in ['disabled', 'error', 'pending']:
+                        doc.sync_status = "pending"
+                    elif not is_selected:
+                        doc.sync_status = "disabled"
+                    doc.save()
+                
+                if is_selected and doc.sync_status == "pending":
+                    sync_logger.info(f"{doc.name} selected, queued for indexing.")
+                    # Outbox record
+                    SyncJob.objects.create(document=doc, action='index')
                 elif not is_selected:
-                    doc.sync_status = "disabled"
-                doc.save()
-            
-            if is_selected and doc.sync_status == "pending":
-                sync_logger.info(f"{doc.name} selected, queued for indexing.")
-                _index_queue.put({"action": "index", "doc_id": doc.id})
-            elif not is_selected:
-                sync_logger.info(f"{doc.name} deselected, removing from knowledge base.")
-                _index_queue.put({"action": "delete", "file_id": fid})
-            
-            processed += 1
+                    sync_logger.info(f"{doc.name} deselected, removing from knowledge base.")
+                    # Outbox record
+                    SyncJob.objects.create(document=doc, action='delete')
+                
+                processed += 1
         
         # If deselecting, immediately recompute health so badge updates
         if not is_selected:

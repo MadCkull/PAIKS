@@ -214,6 +214,17 @@ function _computeFolderState(folderCb) {
 // ── Background Data Preloading ─────────────────────────────────
 let _bgPreloadPromise = null;
 
+window.revalidateFileTree = async function() {
+  _bgPreloadPromise = null; // Invalidate cache
+  await window.preloadDriveBackground();
+  
+  // If the drive modal is open, silently redraw it
+  const modal = document.getElementById("drive-modal-overlay");
+  if (modal && !modal.classList.contains("hidden")) {
+      window.updateDriveModal(); // Will draw immediately because preloadDriveBackground just finished
+  }
+};
+
 window.preloadDriveBackground = function() {
   if (_bgPreloadPromise) return _bgPreloadPromise;
   
@@ -284,10 +295,8 @@ window.updateDriveModal = async function() {
     renderTree("tree-local", null, "", "local");
   }
 
-  // SSE connection is now managed globally by PAIKSEventBus in app.js
-  // setupSSE() is still called here for drive-specific events (sync_update, system_log)
-  setupSSE();
   
+
   // Background silent refresh of selections to ensure accuracy if modified externally
   fetchWithTimeout(`${API_BASE}/drive/selections`, {}, 5000)
     .then(r => r.json())
@@ -407,67 +416,70 @@ function setBadge(state) {
     }
 }
 
-function setupSSE() {
-  if (_eventSource) return;
-  _eventSource = new EventSource(`${API_BASE}/events/status`);
-  
-  _eventSource.onmessage = function(e) {
-    try {
-      const payload = JSON.parse(e.data);
+function _registerDriveSSEHandlers() {
+  if (typeof PAIKSEventBus === "undefined") return;
 
-      if (payload.type === "system_health") {
-          setBadge(payload.data.state);
-          // Dashboard updates are now handled by its own SSE handlers — no cascading fetch needed
+  PAIKSEventBus.on("system_health", function(data) {
+      setBadge(data.state);
+  });
+
+  // Revalidate the DOM silently when backend stats actively change
+  PAIKSEventBus.on("drive_stats", function(data) {
+      if (typeof window.revalidateFileTree === "function") {
+          window.revalidateFileTree();
       }
-      else if (payload.type === "sync_update") {
-        if (payload.data.status === "syncing") {
-           setBadge("syncing");
-        }
-        
-        // Dynamically inject/remove error icons in tree without full re-render
-        if (payload.data.file_id) {
-           const safeId = payload.data.file_id.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-           const cb = document.querySelector(`.paiks-cb[data-id="${safeId}"]`);
-           if (cb) {
-              const nodeFile = cb.closest('.tree-node-file');
-              if (nodeFile) {
-                 let icon = nodeFile.querySelector('.status-icon');
-                 if (payload.data.status === "error") {
-                     if (!icon) {
-                         icon = document.createElement("i");
-                         icon.className = "status-icon fas fa-exclamation-circle";
-                         icon.style.cssText = "color:#fb923c;font-size:0.7rem;margin-left:6px;";
-                         icon.title = "Indexing failed";
-                         const meta = nodeFile.querySelector('.tree-meta');
-                         if (meta) { nodeFile.insertBefore(icon, meta); } 
-                         else { nodeFile.appendChild(icon); }
-                     }
-                 } else {
-                     if (icon) icon.remove();
-                 }
-              }
-           }
-        }
+  });
+
+  PAIKSEventBus.on("sync_update", function(data) {
+      if (data.status === "syncing") {
+         setBadge("syncing");
       }
-      else if (payload.type === "system_log") {
-          const logBody = document.getElementById("drive-log-body");
-          if (logBody) {
-              const div = document.createElement("div");
-              const d = payload.data;
-              let color = "#a0aec0";
-              if (d.level === "success") color = "#34d399";
-              else if (d.level === "warning") color = "#fbbf24";
-              else if (d.level === "error") color = "#f87171";
-              div.style.cssText = `color:${color}; margin-bottom:5px; line-height:1.4; cursor:default;`;
-              div.title = d.time || "";
-              div.textContent = d.msg;
-              logBody.appendChild(div);
-              logBody.scrollTop = logBody.scrollHeight;
-          }
+      
+      // Dynamically inject/remove error icons in tree without full re-render
+      if (data.file_id) {
+         const safeId = data.file_id.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+         const cb = document.querySelector(`.paiks-cb[data-id="${safeId}"]`);
+         if (cb) {
+            const nodeFile = cb.closest('.tree-node-file');
+            if (nodeFile) {
+               let icon = nodeFile.querySelector('.status-icon');
+               if (data.status === "error") {
+                   if (!icon) {
+                       icon = document.createElement("i");
+                       icon.className = "status-icon fas fa-exclamation-circle";
+                       icon.style.cssText = "color:#fb923c;font-size:0.7rem;margin-left:6px;";
+                       icon.title = "Indexing failed";
+                       const meta = nodeFile.querySelector('.tree-meta');
+                       if (meta) { nodeFile.insertBefore(icon, meta); } 
+                       else { nodeFile.appendChild(icon); }
+                   }
+               } else {
+                   if (icon) icon.remove();
+               }
+            }
+         }
       }
-    } catch(err) {}
-  };
+  });
+
+  PAIKSEventBus.on("system_log", function(data) {
+      const logBody = document.getElementById("drive-log-body");
+      if (logBody) {
+          const div = document.createElement("div");
+          let color = "#a0aec0";
+          if (data.level === "success") color = "#34d399";
+          else if (data.level === "warning") color = "#fbbf24";
+          else if (data.level === "error") color = "#f87171";
+          div.style.cssText = `color:${color}; margin-bottom:5px; line-height:1.4; cursor:default;`;
+          div.title = data.time || "";
+          div.textContent = data.msg;
+          logBody.appendChild(div);
+          logBody.scrollTop = logBody.scrollHeight;
+      }
+  });
 }
+
+// Register them once on load
+_registerDriveSSEHandlers();
 
 // ── Selection Toggle (Professional three-state system) ─────────
 

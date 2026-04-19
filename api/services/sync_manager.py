@@ -54,12 +54,11 @@ class SSELogHandler(logging.Handler):
 sse_handler = SSELogHandler()
 logger.addHandler(sse_handler)
 
-# ── Core state ──────────────────────────────────────────────────
-_index_queue = queue.Queue()
-_observer = None
-_worker_thread = None
-_polling_thread = None
+# ── Threading State ──────────────────────────────────────────────
 _running = False
+_worker_thread = None
+_observer = None
+_polling_thread = None
 
 # Debounce timers for watchdog (prevents duplicate rapid-fire events)
 _debounce_timers = {}
@@ -177,7 +176,8 @@ class LocalFileHandler(FileSystemEventHandler):
                         doc.save()
 
                 if doc.is_selected and doc.sync_status == "pending":
-                    _index_queue.put({"action": "index", "doc_id": doc.id, "expected_hash": file_hash})
+                    from api.models import SyncJob
+                    SyncJob.objects.create(document=doc, action="index")
                     logger.info(f"Change detected in {os.path.basename(filepath)}, queued for indexing.")
                     _compute_and_broadcast_health()
 
@@ -187,18 +187,22 @@ class LocalFileHandler(FileSystemEventHandler):
     def _handle_deleted(self, filepath: str):
         file_id = f"local__{filepath}"
         try:
-            doc = DocumentTrack.objects.filter(file_id=file_id).first()
-            if doc:
-                doc.sync_status = "disabled"
-                doc.save()
-                _index_queue.put({"action": "delete", "file_id": file_id})
-                logger.info(f"{os.path.basename(filepath)} was deleted from disk.")
+            from api.models import SyncJob
+            from django.db import transaction
+            
+            with transaction.atomic():
+                doc = DocumentTrack.objects.filter(file_id=file_id).first()
+                if doc:
+                    doc.sync_status = "disabled"
+                    doc.save()
+                    SyncJob.objects.create(document=doc, action="delete")
+                    logger.info(f"{os.path.basename(filepath)} was deleted from disk/unselected.")
         except Exception as e:
             logger.error(f"Error handling deletion of {os.path.basename(filepath)}: {e}")
 
 
 def _index_worker():
-    """Background thread that processes indexing/deletion jobs."""
+    """Background thread that processes indexing/deletion jobs from the Database Outbox."""
     from api.services.rag.ingestion.parsers import parse_local_file, parse_cloud_file
     from api.services.rag.ingestion.chunking import chunk_documents
     from api.services.rag.ingestion.pipeline import ingest_nodes_to_collection
@@ -211,22 +215,31 @@ def _index_worker():
     global _running
     while _running:
         try:
-            from django.db import close_old_connections
+            from django.db import close_old_connections, transaction
             close_old_connections()
+            from api.models import SyncJob, DocumentTrack
             
-            job = _index_queue.get(timeout=2)
+            # Fetch the oldest pending job
+            with transaction.atomic():
+                job = SyncJob.objects.select_for_update(skip_locked=True).filter(status='pending').order_by('created_at').first()
+                if not job:
+                    time.sleep(2)
+                    continue
+                # Mark as processing
+                job.status = 'processing'
+                job.save()
 
-            action = job.get("action")
+            action = job.action
+            doc = job.document
 
             # ── DELETE ──────────────────────────────────────────
             if action == "delete":
-                fid = job.get("file_id")
-                display_name = fid.split('__')[-1] if '__' in fid else fid
-                # Use basename for display if it's a full path
-                display_name = os.path.basename(display_name) if os.sep in display_name or '/' in display_name else display_name
+                fid = doc.file_id.replace("cloud__", "", 1) if doc.source == "cloud" else doc.file_id
+                display_name = doc.name
+                
                 try:
                     client = get_qdrant_client()
-                    col = CLOUD_COLLECTION if fid.startswith("cloud__") else LOCAL_COLLECTION
+                    col = CLOUD_COLLECTION if doc.source == "cloud" else LOCAL_COLLECTION
                     if client.collection_exists(col):
                         client.delete(
                             collection_name=col,
@@ -242,39 +255,30 @@ def _index_worker():
                             )
                         )
                     logger.info(f"{display_name} removed from knowledge base.")
+                    job.status = 'completed'
                 except Exception as e:
                     logger.error(f"Failed to remove {display_name}: {e}")
-
+                    job.status = 'failed'
+                    job.error_message = str(e)
+                
+                job.save()
                 _compute_and_broadcast_health()
 
             # ── INDEX ───────────────────────────────────────────
             elif action == "index":
-                doc_id = job.get("doc_id")
-                expected_hash = job.get("expected_hash")
-
-                try:
-                    doc = DocumentTrack.objects.get(id=doc_id)
-                except DocumentTrack.DoesNotExist:
-                    _index_queue.task_done()
-                    continue
-
-                # Skip if user deselected while job was queued
+                # Skip if user deselected it before we got around to indexing
                 if not doc.is_selected:
-                    _index_queue.task_done()
-                    continue
-
-                # STALE JOB CHECK: if the file changed again since this job was queued,
-                # skip this job  -  a newer job with the latest hash is already in the queue.
-                if expected_hash and doc.content_hash != expected_hash:
-                    _index_queue.task_done()
+                    job.status = 'completed'
+                    job.save()
                     continue
 
                 # Skip directories silently
                 if doc.source == "local":
                     filepath = doc.file_id.replace("local__", "", 1)
-                    if os.path.isdir(filepath):
+                    if os.path.exists(filepath) and os.path.isdir(filepath):
                         doc.delete()
-                        _index_queue.task_done()
+                        job.status = 'completed'
+                        job.save()
                         continue
 
                 logger.info(f"Processing {doc.name}...")
@@ -289,6 +293,8 @@ def _index_worker():
 
                     if doc.source == "local":
                         filepath = doc.file_id.replace("local__", "", 1)
+                        if not os.path.exists(filepath):
+                            raise Exception("File deleted before index started")
 
                         # Clean old vectors
                         client = get_qdrant_client()
@@ -324,6 +330,8 @@ def _index_worker():
                             raise Exception("Not authenticated with Google Drive")
                         service = drive_service(creds)
 
+                        fid = doc.file_id.replace("cloud__", "", 1)
+                        
                         client = get_qdrant_client()
                         if client.collection_exists(CLOUD_COLLECTION):
                             client.delete(
@@ -333,14 +341,14 @@ def _index_worker():
                                         must=[
                                             qmodels.FieldCondition(
                                                 key="file_id",
-                                                match=qmodels.MatchValue(value=doc.file_id)
+                                                match=qmodels.MatchValue(value=fid)
                                             )
                                         ]
                                     )
                                 )
                             )
 
-                        fid = doc.file_id.replace("cloud__", "", 1)
+
                         try:
                             # Must fetch mimeType and webViewLink dynamically for proper parsing
                             meta = service.files().get(fileId=fid, fields="mimeType, webViewLink").execute()
@@ -353,7 +361,7 @@ def _index_worker():
                             "name": doc.name,
                             "mime": meta.get("mimeType", ""),
                             "link": meta.get("webViewLink", ""),
-                            "modified": str(doc.last_modified)
+                            "modified": doc.last_modified.isoformat() if doc.last_modified else ""
                         }
                         parsed = parse_cloud_file(service, file_dict)
                         if parsed:
@@ -363,34 +371,43 @@ def _index_worker():
                     if parsed_docs:
                         nodes = chunk_documents(parsed_docs)
                         ingest_nodes_to_collection(nodes, col)
+                        
                         doc.sync_status = "synced"
                         doc.error_message = ""
                         doc.save()
+                        
+                        job.status = 'completed'
                         logger.info(f"{doc.name} indexed successfully.")
                         broadcast_event("sync_update", {"file_id": doc.file_id, "name": doc.name, "status": "synced"})
                     else:
-                        # File could not be read  -  this is an ERROR, not success
                         doc.sync_status = "error"
                         doc.error_message = "Could not extract text (unsupported format or empty)"
                         doc.save()
+                        
+                        job.status = 'failed'
+                        job.error_message = doc.error_message
                         logger.warning(f"{doc.name} could not be read (unsupported or empty).")
                         broadcast_event("sync_update", {"file_id": doc.file_id, "name": doc.name, "status": "error"})
+                        
+                    job.save()
 
                 except Exception as e:
                     doc.sync_status = "error"
                     doc.error_message = str(e)
                     doc.save()
+                    
+                    job.status = 'failed'
+                    job.error_message = str(e)
+                    job.save()
+                    
                     broadcast_event("sync_update", {"file_id": doc.file_id, "name": doc.name, "status": "error"})
                     logger.error(f"Failed to index {doc.name}: {e}")
 
                 _compute_and_broadcast_health()
 
-            _index_queue.task_done()
-        except queue.Empty:
-            continue
         except Exception as e:
             logger.error(f"Worker error: {e}")
-            time.sleep(1)
+            time.sleep(2)
 
 
 def _cloud_poll_worker():
@@ -418,6 +435,9 @@ def _cloud_poll_worker():
                     page_token = None
                     all_cloud_ids = set()
 
+                    from django.db import transaction
+                    from api.models import SyncJob
+                    
                     while True:
                         results = service.files().list(
                             q=base_q,
@@ -432,30 +452,43 @@ def _cloud_poll_worker():
                             all_cloud_ids.add(fid)
                             mod_time = parse_date(f['modifiedTime'])
 
-                            doc, created = DocumentTrack.objects.get_or_create(
-                                file_id=fid,
-                                defaults={
-                                    "name": f['name'],
-                                    "source": "cloud",
-                                    "last_modified": mod_time,
-                                    "sync_status": "pending"
-                                }
-                            )
+                            with transaction.atomic():
+                                doc, created = DocumentTrack.objects.get_or_create(
+                                    file_id=fid,
+                                    defaults={
+                                        "name": f['name'],
+                                        "source": "cloud",
+                                        "last_modified": mod_time,
+                                        "sync_status": "pending"
+                                    }
+                                )
 
-                            if not created and doc.last_modified < mod_time:
-                                doc.last_modified = mod_time
-                                doc.sync_status = "pending"
-                                doc.save()
+                                needs_index = False
+                                if not created and (doc.last_modified is None or doc.last_modified < mod_time):
+                                    doc.last_modified = mod_time
+                                    # Set to pending only if user still wants it selected
+                                    if doc.is_selected:
+                                        doc.sync_status = "pending"
+                                        needs_index = True
+                                    doc.save()
 
-                            if doc.is_selected and doc.sync_status == "pending":
-                                _index_queue.put({"action": "index", "doc_id": doc.id})
+                                if created and doc.is_selected:
+                                    needs_index = True
+
+                                if needs_index:
+                                    SyncJob.objects.create(document=doc, action="index")
 
                         page_token = results.get("nextPageToken")
                         if not page_token:
                             break
 
-                    # Mark missing files as disabled
-                    DocumentTrack.objects.filter(source="cloud").exclude(file_id__in=all_cloud_ids).update(sync_status="disabled")
+                    # Mark missing files as disabled and queue delete for them
+                    with transaction.atomic():
+                        missing = DocumentTrack.objects.filter(source="cloud", is_selected=True).exclude(file_id__in=all_cloud_ids)
+                        for doc in missing:
+                            doc.sync_status = "disabled"
+                            doc.save()
+                            SyncJob.objects.create(document=doc, action="delete")
 
         except Exception as e:
             logger.error(f"Cloud sync error: {e}")

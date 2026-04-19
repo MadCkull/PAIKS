@@ -55,7 +55,7 @@ def parse_cloud_file(service, file_info: dict) -> Optional[Document]:
                 "source": "cloud",
                 "mime_type": mime,
                 "web_view_link": file_info.get("link", ""),
-                "modified_time": file_info.get("modified", ""),
+                "modified_time": file_info.get("modified", ""), # Should already be ISO from Drive API or str(doc.last_modified)
                 "is_summary": False,
                 "chunk_index": 0,
                 "total_chunks": 0,

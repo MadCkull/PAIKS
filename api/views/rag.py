@@ -32,14 +32,14 @@ def status(request):
     Returns the status of the Qdrant DB points.
     """
     try:
-        from api.services.rag.indexer import get_qdrant_client
-        client = get_qdrant_client()
-        local_count = client.get_collection(LOCAL_COLLECTION).points_count if client.collection_exists(LOCAL_COLLECTION) else 0
-        cloud_count = client.get_collection(CLOUD_COLLECTION).points_count if client.collection_exists(CLOUD_COLLECTION) else 0
-        total_chunks = local_count + cloud_count
+        from api.models import DocumentTrack
+        
+        # Count how many files are physically marked as synced in our canonical DB
+        total_indexed_files = DocumentTrack.objects.filter(sync_status="synced").count()
+        
         return JsonResponse({
-            "indexed": total_chunks > 0,
-            "total_chunks": total_chunks,
+            "indexed": total_indexed_files > 0,
+            "total_chunks": total_indexed_files, # Returned as total_chunks for backward comp with UI dashboard labels
             "ingest_running": _ingest_progress["running"],
             "ingest_progress": _ingest_progress,
         })
