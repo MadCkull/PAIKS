@@ -113,6 +113,10 @@ def selection(request):
         # If deselecting, immediately recompute health so badge updates
         if not is_selected:
             _compute_and_broadcast_health()
+        
+        # Push fresh stats to the frontend via SSE immediately
+        from api.services.status_broadcaster import trigger_immediate_broadcast
+        trigger_immediate_broadcast()
                 
         return JsonResponse({"status": "updated", "count": processed})
     except Exception as e:

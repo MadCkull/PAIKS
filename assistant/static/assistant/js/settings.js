@@ -327,35 +327,53 @@ window.loadLLMStatus = async function() {
   const nameLabel = document.getElementById("chat-model-name");
   const dropdownList = document.getElementById("model-dropdown-list");
 
-  try {
-    const res = await fetchWithTimeout(`${API_BASE}/rag/llm/status`, {}, 5000);
-    const data = await res.json();
-    window.current_llm_model = data.current_model || "";
-    if (!btn) return;
+  // Use SSE-cached data if available (avoids redundant HTTP fetch)
+  let data = (window._liveStats && window._liveStats.llm_status)
+    ? window._liveStats.llm_status
+    : null;
 
-    if (data.reachable) {
-      if (indicator) indicator.className = "chat-model-indicator status-online";
-      if (nameLabel) nameLabel.textContent = data.current_model || "Connected";
-      btn.disabled = false;
-      if (dropdownList && data.available_models?.length) {
-        dropdownList.innerHTML = data.available_models
-          .map(m => `
-            <button class="model-dropdown-item ${m === data.current_model ? 'active' : ''}" onclick="selectChatModel('${m}')">
-              ${m} ${m === data.current_model ? ' ✓' : ''}
-            </button>
-          `).join("");
-      }
-    } else {
+  if (!data) {
+    // Fallback: HTTP fetch (first load before SSE starts pushing)
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/rag/llm/status`, {}, 5000);
+      data = await res.json();
+    } catch {
+      if (btn) btn.disabled = true;
       if (indicator) indicator.className = "chat-model-indicator status-offline";
-      if (nameLabel) nameLabel.textContent = "Offline";
-      btn.disabled = true;
+      if (nameLabel) nameLabel.textContent = "Unavailable";
+      return;
     }
-  } catch {
-    if (btn) btn.disabled = true;
+  }
+
+  window.current_llm_model = data.current_model || "";
+  if (!btn) return;
+
+  if (data.reachable) {
+    if (indicator) indicator.className = "chat-model-indicator status-online";
+    if (nameLabel) nameLabel.textContent = data.current_model || "Connected";
+    btn.disabled = false;
+    if (dropdownList && data.available_models?.length) {
+      dropdownList.innerHTML = data.available_models
+        .map(m => `
+          <button class="model-dropdown-item ${m === data.current_model ? 'active' : ''}" onclick="selectChatModel('${m}')">
+            ${m} ${m === data.current_model ? ' ✓' : ''}
+          </button>
+        `).join("");
+    }
+  } else {
     if (indicator) indicator.className = "chat-model-indicator status-offline";
-    if (nameLabel) nameLabel.textContent = "Unavailable";
+    if (nameLabel) nameLabel.textContent = "Offline";
+    btn.disabled = true;
   }
 };
+
+// Auto-update LLM UI when SSE pushes new llm_status
+if (typeof PAIKSEventBus !== "undefined") {
+  PAIKSEventBus.on("llm_status", function(data) {
+    // Update the chat model button in real-time
+    if (typeof loadLLMStatus === "function") loadLLMStatus();
+  });
+}
 
 window.onProviderChange = function() {
   const provider = document.getElementById("llm-provider-select")?.value;

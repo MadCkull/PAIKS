@@ -14,6 +14,7 @@ from django.utils import timezone
 from api.models import DocumentTrack
 from api.services.config import load_app_settings, LOCAL_ALLOWED_EXTENSIONS
 from api.services.event_bus import broadcast_event
+from api.services.status_broadcaster import trigger_immediate_broadcast
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +101,7 @@ def _compute_and_broadcast_health():
             state = "warning"  # some selected files aren't synced
 
         broadcast_event("system_health", {"state": state})
+        trigger_immediate_broadcast()
     except Exception:
         pass
 

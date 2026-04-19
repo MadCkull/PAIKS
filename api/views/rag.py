@@ -451,7 +451,12 @@ def debug_indices(request):
     """
     Returns a grouped, file-centric view of ALL raw data in Qdrant collections.
     Calculates metrics, identifies empty/fragmented files, and reports summary status.
+    Only available when DEBUG=True to prevent data exposure.
     """
+    from django.conf import settings as django_settings
+    if not django_settings.DEBUG:
+        return JsonResponse({"error": "Debug endpoint not available"}, status=403)
+
     import json
     from api.services.rag.indexer import get_qdrant_client, LOCAL_COLLECTION, CLOUD_COLLECTION
     client = get_qdrant_client()

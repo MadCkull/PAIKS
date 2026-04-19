@@ -284,6 +284,8 @@ window.updateDriveModal = async function() {
     renderTree("tree-local", null, "", "local");
   }
 
+  // SSE connection is now managed globally by PAIKSEventBus in app.js
+  // setupSSE() is still called here for drive-specific events (sync_update, system_log)
   setupSSE();
   
   // Background silent refresh of selections to ensure accuracy if modified externally
@@ -415,7 +417,7 @@ function setupSSE() {
 
       if (payload.type === "system_health") {
           setBadge(payload.data.state);
-          if (window.updateDashboardStats) window.updateDashboardStats();
+          // Dashboard updates are now handled by its own SSE handlers — no cascading fetch needed
       }
       else if (payload.type === "sync_update") {
         if (payload.data.status === "syncing") {
@@ -527,7 +529,7 @@ window.toggleSelection = async function(checkboxEl) {
       },
       body: JSON.stringify({ file_ids: idsToUpdate, is_selected: isSelected })
     });
-    if (window.updateDashboardStats) window.updateDashboardStats();
+    // Dashboard stats will be updated automatically via SSE broadcast from the backend
   } catch(e) {
     console.error("Selection failed", e);
     setBadge("error");

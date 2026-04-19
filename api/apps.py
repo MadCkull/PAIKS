@@ -13,7 +13,16 @@ class ApiConfig(AppConfig):
             return
             
         from api.services.sync_manager import start_sync_engine
+        from api.services.rag.retrieval.reranker import warmup_reranker
+        from api.services.status_broadcaster import start_status_broadcaster
         import threading
         
-        # Start in a separate thread so it doesn't block Django startup
+        # Pre-load the reranker model so the first search is instant
+        threading.Thread(target=warmup_reranker, daemon=True).start()
+        
+        # Start the real-time status broadcaster (replaces all frontend polling)
+        start_status_broadcaster()
+        
+        # Start the sync engine (watchdog + background indexer)
         threading.Thread(target=start_sync_engine, daemon=True).start()
+
