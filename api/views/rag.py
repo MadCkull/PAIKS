@@ -179,8 +179,27 @@ class MultiCollectionRetriever(BaseRetriever):
                 pass
         return nodes
 
+# ── Simple In-Memory Rate Limiter ──
+from collections import defaultdict
+import time
+_search_rate_limits = defaultdict(list)
+
+def _check_rate_limit(ip: str, limit: int = 5, window: int = 10) -> bool:
+    """Returns True if request is allowed, False if rate limit exceeded (5 requests per 10 seconds)."""
+    now = time.time()
+    # clean old requests outside the window
+    _search_rate_limits[ip] = [t for t in _search_rate_limits[ip] if now - t < window]
+    if len(_search_rate_limits[ip]) >= limit:
+        return False
+    _search_rate_limits[ip].append(now)
+    return True
+
 def search(request):
     from api.services.rag.tracer import PipelineTracer
+
+    client_ip = request.META.get('REMOTE_ADDR', '127.0.0.1')
+    if not _check_rate_limit(client_ip):
+        return JsonResponse({"error": "Too Many Requests. Please wait 10 seconds."}, status=429)
 
     try:
         payload = json.loads(request.body) if request.body else {}
