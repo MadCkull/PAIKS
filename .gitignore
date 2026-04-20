@@ -2,6 +2,7 @@
 # Python & Virtual Environments
 # ==========================================
 __pycache__/
+*.pyc
 *.py[cod]
 *$py.class
 *.so

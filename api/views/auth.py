@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 OAUTH_REDIRECT_URI = os.environ.get("OAUTH_REDIRECT_URI", "http://localhost:8000/api/auth/callback")
 
 # Cached user info path  -  avoids hitting Google API on every status check
-USER_CACHE_PATH = STORAGE_DIR / "user_cache.json"
+USER_CACHE_PATH = STORAGE_DIR / "auth" / "user_profile.json"
 
 def _load_cached_user():
     """Load cached Google user profile from disk."""

@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 # Base directory for the embedded Qdrant DB
 STORAGE_DIR = Path(__file__).resolve().parent.parent.parent.parent / ".storage"
-QDRANT_PATH = STORAGE_DIR / "qdrant_db"
+QDRANT_PATH = STORAGE_DIR / "databases" / "vectors"
 
 # The names of our strictly separated collections
 CLOUD_COLLECTION = "paiks_cloud_index"

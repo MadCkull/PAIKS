@@ -28,8 +28,8 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-LOG_DIR = Path(settings.STORAGE_DIR) if hasattr(settings, 'STORAGE_DIR') else Path(".storage")
-LOG_PATH = LOG_DIR / "chat.log"
+LOG_DIR = Path(settings.STORAGE_DIR) / "logs" if hasattr(settings, 'STORAGE_DIR') else Path(".storage") / "logs"
+LOG_PATH = LOG_DIR / "pipeline.trace"
 
 
 def _ensure_log():

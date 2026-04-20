@@ -354,6 +354,7 @@ window.loadLLMStatus = async function() {
     btn.disabled = false;
     if (dropdownList && data.available_models?.length) {
       dropdownList.innerHTML = data.available_models
+        .filter(m => !m.toLowerCase().includes('embed'))
         .map(m => `
           <button class="model-dropdown-item ${m === data.current_model ? 'active' : ''}" onclick="selectChatModel('${m}')">
             ${m} ${m === data.current_model ? ' ✓' : ''}
@@ -413,6 +414,16 @@ window.selectChatModel = async function(modelName) {
   const base_url = urlInput?.value.trim() || "http://localhost:11434";
   const provider = providerSelect?.value || "ollama";
 
+  // ── Optimistic UI Update (Instant Response) ──
+  const nameLabel = document.getElementById("chat-model-name");
+  if (nameLabel) nameLabel.textContent = modelName;
+  const menu = document.getElementById("model-dropdown-menu");
+  if (menu) menu.classList.add("hidden");
+  document.querySelectorAll(".model-dropdown-item").forEach(item => {
+     item.classList.toggle("active", item.textContent.trim().startsWith(modelName));
+  });
+  window.current_llm_model = modelName;
+
   try {
     await fetch(`${API_BASE}/rag/llm/config`, {
       method: "POST",
@@ -420,8 +431,6 @@ window.selectChatModel = async function(modelName) {
       body: JSON.stringify({ base_url, model: modelName, provider }),
     });
     showToast(`Model set to ${modelName}`, "success");
-    const menu = document.getElementById("model-dropdown-menu");
-    if (menu) menu.classList.add("hidden");
     await loadLLMStatus();
   } catch (err) {
     showToast("Failed to change model", "error");

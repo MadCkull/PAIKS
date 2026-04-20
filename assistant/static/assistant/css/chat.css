@@ -59,13 +59,17 @@
 /* === CHAT THREAD === */
 
 .chat-thread {
-  flex: 1;
+  position: absolute;
+  top: -47px; left: 0; right: 0; bottom: -36px;
   overflow-y: auto;
-  padding: 20px 0 40px;
+  padding: 131px 0 145px;
   display: flex;
   flex-direction: column;
   align-items: center;
   scroll-behavior: smooth;
+  /* Transparent behind header (0-60px), then fades in. Transparent behind input bar (bottom 100px), fading out. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0px, transparent 65px, black 80px, black calc(100% - 100px), transparent calc(100% - 85px), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0px, transparent 65px, black 80px, black calc(100% - 100px), transparent calc(100% - 85px), transparent 100%);
 }
 .chat-thread-inner {
   width: 100%;
@@ -321,12 +325,12 @@
 .btn-send:hover { background: var(--accent-hover); transform: translateY(-1px); }
 .btn-send:disabled { background: var(--glass-bg-active); color: var(--text-dim); cursor: not-allowed; transform: none; }
 
-.input-footer {
+/* .input-footer {
   text-align: center;
   font-size: 0.75rem;
   color: var(--text-dim);
   margin-top: 12px;
-}
+} */
 
 /* Legacy input styles  -  kept for existing chat page */
 .chat-input-area { padding: 20px 28px; border-top: 1px solid var(--glass-border); background: var(--glass-bg); }
@@ -666,6 +670,18 @@
 
 
 /* === MODERN CHAT INPUT BAR REDESIGN === */
+
+.input-area {
+  position: absolute;
+  bottom: 24px;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  z-index: 100;
+}
+.input-area > * {
+  pointer-events: auto;
+}
 
 .input-container {
   position: relative !important;

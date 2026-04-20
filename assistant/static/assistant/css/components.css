@@ -3,11 +3,12 @@
 .toolbarComponent {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  margin-top: 36px;
+  gap: 10px;
   background: var(--glass-bg);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  padding: 6px;
+  padding: 10px;
   border: 1px solid var(--glass-border);
   border-radius: 999px;
   box-shadow: var(--glass-shadow);

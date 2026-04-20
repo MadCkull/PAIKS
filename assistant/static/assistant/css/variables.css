@@ -51,6 +51,12 @@
   /* Sidebar */
   --sidebar-bg: rgba(15, 17, 26, 0.6);
   --sidebar-border: var(--glass-border);
+
+  /* Sidebar Glassmorphic Overlay */
+  --sidebar-glass-bg: rgba(10, 8, 18, 0.88);
+  --sidebar-glass-border: rgba(255, 255, 255, 0.07);
+  --sidebar-glass-shadow: 0 8px 48px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --sidebar-blur: 44px;
 }
 
 /* Light Mode */
@@ -95,6 +101,12 @@
 
   --sidebar-bg: rgba(248, 250, 252, 0.8);
   --sidebar-border: var(--glass-border);
+
+  /* Sidebar Glassmorphic Overlay (light) */
+  --sidebar-glass-bg: rgba(255, 255, 255, 0.92);
+  --sidebar-glass-border: rgba(0, 0, 0, 0.06);
+  --sidebar-glass-shadow: 0 8px 48px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  --sidebar-blur: 44px;
 }
 
 /* =========================================================================
@@ -171,6 +183,11 @@
 
   --sidebar-bg:    #080710;
   --sidebar-border:rgba(255,255,255,0.04);
+
+  /* Sidebar overlay – darker in dark mode */
+  --sidebar-glass-bg: rgba(6, 5, 14, 0.92);
+  --sidebar-glass-border: rgba(255, 255, 255, 0.05);
+  --sidebar-glass-shadow: 0 8px 48px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.03);
 
   --border-dim:    rgba(255,255,255,0.07);
   --border-accent: rgba(255,255,255,0.12);

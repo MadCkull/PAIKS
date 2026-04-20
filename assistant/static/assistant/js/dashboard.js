@@ -53,11 +53,15 @@ function _applyDriveStats(stats) {
   // Also update toolbar indexed count
   const countEl = document.getElementById("toolbar-indexed-count");
   if (countEl) countEl.textContent = stats.indexed_total || 0;
+  
+  if (window.updateToolbarStatusDot) window.updateToolbarStatusDot();
 }
 
 function _applyRagStatus(rag) {
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
   set("stat-embeddings", (rag.total_chunks || 0).toLocaleString());
+  
+  if (window.updateToolbarStatusDot) window.updateToolbarStatusDot();
 }
 
 function _applyLlmStatus(llm) {
@@ -68,6 +72,8 @@ function _applyLlmStatus(llm) {
   }
   const llmModel = document.getElementById("stat-llm-model");
   if (llmModel) llmModel.textContent = llm.provider ? `${llm.provider} / ${llm.current_model || " - "}` : "";
+  
+  if (window.updateToolbarStatusDot) window.updateToolbarStatusDot();
 }
 
 
@@ -137,7 +143,45 @@ window.updateToolbarContext = async function() {
     const data = await res.json();
     const countEl = document.getElementById("toolbar-indexed-count");
     if (countEl) countEl.textContent = data.indexed_total || 0;
+    
+    // Seed system health for dot calculation if empty
+    if (!window._liveStats) window._liveStats = {};
+    window._liveStats.drive_stats = data;
+    window.updateToolbarStatusDot();
   } catch (_) {}
+};
+
+window.updateToolbarStatusDot = function() {
+  const dot = document.getElementById("toolbar-status-dot");
+  const container = document.getElementById("toolbar-context");
+  if (!dot) return;
+
+  const ds = window._liveStats?.drive_stats || {};
+  const ls = window._liveStats?.llm_status || {};
+  const rs = window._liveStats?.rag_status || {};
+
+  let state = "normal";
+  let message = "System Normal";
+
+  if (ds.error_total > 0) {
+    state = "critical";
+    message = `${ds.error_total} File Sync Error(s)`;
+  } else if (ls.reachable === false) {
+    state = "warning";
+    message = "Ollama LLM Offline";
+  } else if (!ds.authenticated && ds.cloud_enabled) {
+    state = "warning";
+    message = "Google Drive Disconnected";
+  } else if ((ds.pending_total || 0) + (ds.syncing_total || 0) > 0) {
+    state = "syncing";
+    message = `${(ds.pending_total || 0) + (ds.syncing_total || 0)} Files Syncing...`;
+  }
+
+  // Update classes and native title
+  dot.className = `status-dot status-dot-${state}`;
+  if (container) {
+    container.title = message;
+  }
 };
 
 // handleFeatureSync removed since Sync is fully automated.

@@ -3,8 +3,8 @@
   <nav class="toolbarComponent" id="toolbarComponent">
 
     <!-- Status: indexed files count -->
-    <div class="toolbar-context" id="toolbar-context" style="display:flex; align-items:center;">
-      <span class="status-dot" style="background-color: var(--color-success);"></span>
+    <div class="toolbar-context" id="toolbar-context" style="display:flex; align-items:center;" title="System Normal">
+      <span class="status-dot tooltip-trigger" id="toolbar-status-dot" style="background-color: var(--color-success);"></span>
       <span id="toolbar-indexed-count" style="font-weight:bold; margin: 0 6px;">0</span>
       <span style="color:var(--text-secondary)">files indexed</span>
     </div>
@@ -60,3 +60,35 @@
 
   </nav>
 </header>
+
+<style>
+@keyframes slow-blink-glow {
+  0%   { opacity: 1;   box-shadow: 0 0 8px currentColor; }
+  50%  { opacity: 0.4; box-shadow: 0 0 0px currentColor; }
+  100% { opacity: 1;   box-shadow: 0 0 8px currentColor; }
+}
+.status-dot {
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+  position: relative;
+}
+.status-dot-normal {
+  background-color: #10b981 !important;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.4) !important;
+  animation: none !important;
+}
+.status-dot-syncing {
+  background-color: #eab308 !important; /* Yellowish */
+  color: #eab308; /* For currentColor in box-shadow */
+  animation: slow-blink-glow 2s infinite ease-in-out !important;
+}
+.status-dot-warning {
+  background-color: #f59e0b !important; /* Orange/Yellow */
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.5) !important;
+  animation: none !important;
+}
+.status-dot-critical {
+  background-color: #ef4444 !important; /* Red */
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.6) !important;
+  animation: none !important;
+}
+</style>

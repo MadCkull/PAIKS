@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import health, auth, drive, search, rag, llm, local_files, system, events
+from .views import health, auth, drive, search, rag, llm, local_files, system, events, chat_history
 
 urlpatterns = [
     # ── Health & System ──
@@ -38,4 +38,9 @@ urlpatterns = [
     path("local/tree",          local_files.get_tree),
     path("local/upload",        local_files.upload),
     path("local/delete",        local_files.delete),
+    # Chat History
+    path("chat/sessions",       chat_history.list_sessions),
+    path("chat/sessions/new",   chat_history.create_session),
+    path("chat/sessions/<str:session_id>/messages", chat_history.get_session_messages),
+    path("chat/sessions/<str:session_id>/delete", chat_history.delete_session),
 ]

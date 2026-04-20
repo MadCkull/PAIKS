@@ -93,38 +93,63 @@ function initToolbar() {
       if (e.target === ov) ov.classList.add("hidden");
     });
   });
-
-  // Sidebar Workspace Switching logic
-  document.querySelectorAll(".workspace-item").forEach(ws => {
-    ws.addEventListener("click", () => {
-      document.querySelectorAll(".workspace-item").forEach(w => w.classList.remove("active"));
-      ws.classList.add("active");
-      
-      const wsType = ws.dataset.ws; // 'all', 'drive', 'local'
-      openModal("drive-overlay");
-      
-      // We rely on drive.js to handle the actual tab switching now
-      const driveTabs = document.querySelector("#drive-tabs");
-      if (driveTabs) {
-          const tabToClick = wsType === "local" ? "local" : "cloud";
-          const btn = driveTabs.querySelector(`[data-tab="${tabToClick}"]`);
-          if (btn) btn.click();
-      }
-    });
-  });
 }
 
-const SIDEBAR_COLLAPSED_KEY = "paiks-sidebar-collapsed";
-function initSidebarCollapse() {
-  const btn = document.getElementById("sidebar-collapse-toggle");
+/* ── Sidebar Auto-Reveal ─────────────────────────────────────── */
+
+function initSidebarAutoReveal() {
+  const trigger = document.getElementById("sidebar-trigger");
   const sidebar = document.getElementById("app-sidebar");
-  if (!btn || !sidebar) return;
+  console.log("Init sidebar auto-reveal:", trigger, sidebar);
+  if (!trigger || !sidebar) return;
 
-  if (localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1") sidebar.classList.add("collapsed");
+  let closeTimer = null;
+  const CLOSE_DELAY = 300; // ms before closing after mouse leaves
 
-  btn.addEventListener("click", () => {
-    sidebar.classList.toggle("collapsed");
-    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, sidebar.classList.contains("collapsed") ? "1" : "0");
+  function expandSidebar() {
+    console.log("Expanding sidebar...");
+    if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
+    sidebar.classList.add("expanded");
+    trigger.classList.add("expanded");
+  }
+
+  function schedulClose() {
+    if (closeTimer) clearTimeout(closeTimer);
+    closeTimer = setTimeout(() => {
+      sidebar.classList.remove("expanded");
+      trigger.classList.remove("expanded");
+      closeTimer = null;
+    }, CLOSE_DELAY);
+  }
+
+  // ── Desktop: mouseenter / mouseleave ──
+  trigger.addEventListener("mouseenter", expandSidebar);
+  sidebar.addEventListener("mouseenter", expandSidebar);
+  trigger.addEventListener("mouseleave", schedulClose);
+  sidebar.addEventListener("mouseleave", schedulClose);
+
+  // ── Touch support ──
+  trigger.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    if (sidebar.classList.contains("expanded")) {
+      sidebar.classList.remove("expanded");
+    } else {
+      expandSidebar();
+    }
+  }, { passive: false });
+
+  // Close on tap outside (touch devices)
+  document.addEventListener("touchstart", (e) => {
+    if (!sidebar.contains(e.target) && !trigger.contains(e.target)) {
+      sidebar.classList.remove("expanded");
+    }
+  });
+
+  // Close on Escape key
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && sidebar.classList.contains("expanded")) {
+      sidebar.classList.remove("expanded");
+    }
   });
 }
 

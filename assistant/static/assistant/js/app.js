@@ -96,13 +96,14 @@ window.PAIKSEventBus = (function() {
 
 document.addEventListener("DOMContentLoaded", async () => {
   // ── Core UI Init (always, never fails) ─────────────────────
-  if (typeof initSidebarCollapse === "function") initSidebarCollapse();
+  console.log("Calling initSidebarAutoReveal...");
+  if (typeof initSidebarAutoReveal === "function") initSidebarAutoReveal();
   if (typeof initToolbar === "function") initToolbar();
   if (typeof initNewChatInput === "function") initNewChatInput();
   if (typeof initChatUI === "function") initChatUI();
   if (typeof renderHistoryList === "function") renderHistoryList();
 
-  const newChatBtn = document.querySelector(".btn-new-chat");
+  const newChatBtn = document.getElementById("btn-new-chat");
   if (newChatBtn) {
     newChatBtn.addEventListener("click", e => {
       e.preventDefault();

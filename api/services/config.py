@@ -4,16 +4,16 @@ import json
 
 STORAGE_DIR = settings.STORAGE_DIR
 
-TOKEN_PATH = STORAGE_DIR / "token.json"
-CREDENTIALS_PATH = STORAGE_DIR / "credentials.json"
-SYNC_CACHE_PATH = STORAGE_DIR / "drive_cache.json"
-FOLDER_CONFIG_PATH = STORAGE_DIR / "folder_config.json"
-APP_SETTINGS_PATH = STORAGE_DIR / "app_settings.json"
-CHROMA_PATH = STORAGE_DIR / "chroma_db"
-LLM_CONFIG_PATH = STORAGE_DIR / "llm_config.json"
-LOCAL_FILES_PATH = STORAGE_DIR / "local_files"
-LOCAL_FILES_CACHE = STORAGE_DIR / "local_files_cache.json"
-LOCAL_STATS_CACHE = STORAGE_DIR / "local_stats_cache.json"
+TOKEN_PATH = STORAGE_DIR / "auth" / "google_token.json"
+CREDENTIALS_PATH = STORAGE_DIR / "auth" / "google_creds.json"
+SYNC_CACHE_PATH = STORAGE_DIR / "cache" / "drive_cache.json"
+FOLDER_CONFIG_PATH = STORAGE_DIR / "config" / "folder_config.json"
+APP_SETTINGS_PATH = STORAGE_DIR / "config" / "system.json"
+CHROMA_PATH = STORAGE_DIR / "databases" / "chroma_db"
+LLM_CONFIG_PATH = STORAGE_DIR / "config" / "llm.json"
+LOCAL_FILES_PATH = STORAGE_DIR / "cache" / "mirrors"
+LOCAL_FILES_CACHE = STORAGE_DIR / "cache" / "local_files_cache.json"
+LOCAL_STATS_CACHE = STORAGE_DIR / "cache" / "local_stats_cache.json"
 
 LOCAL_ALLOWED_EXTENSIONS = {".pdf", ".docx", ".doc", ".txt", ".md", ".csv"}
 

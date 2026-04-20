@@ -89,9 +89,15 @@ WSGI_APPLICATION = 'core.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': STORAGE_DIR / 'db.sqlite3',
+        'NAME': STORAGE_DIR / 'databases'/ 'main.sqlite3',
+    },
+    'chats': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': STORAGE_DIR / 'databases' / 'chats.sqlite3',
     }
 }
+
+DATABASE_ROUTERS = ['api.routers.ChatRouter']
 
 
 # Password validation

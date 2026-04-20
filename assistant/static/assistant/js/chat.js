@@ -78,11 +78,11 @@ async function ragSearch(queryOverride) {
     emptyState.classList.add("hidden");
   }
 
+  // Create a new DB session on first message
   if (typeof _activeSid !== 'undefined' && !_activeSid && typeof sessionCreate !== 'undefined') {
-    sessionCreate(query);
+    await sessionCreate(query);
     if(typeof renderHistoryList !== 'undefined') renderHistoryList();
   }
-  if(typeof sessionAddMessage !== 'undefined') sessionAddMessage('user', query);
 
   addChatMessage("user", `
     <div class="chat-msg-avatar">👤</div>
@@ -95,24 +95,12 @@ async function ragSearch(queryOverride) {
   const typing = showTypingIndicator();
 
   try {
-    // Gather conversation history for follow-up awareness (last 6 messages)
-    let history = [];
-    if (typeof _activeSid !== 'undefined' && _activeSid && typeof sessionsGet === 'function') {
-      const allSessions = sessionsGet();
-      const sess = allSessions.find(s => s.id === _activeSid);
-      if (sess && sess.messages && sess.messages.length > 0) {
-        history = sess.messages.slice(-6).map(m => ({
-          role: m.role || 'user',
-          content: m.text || m.content || ''
-        }));
-      }
-    }
-
     const res = await fetchWithTimeout(`${API_BASE}/rag/search`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query, history }),
-    }, 300000); 
+      // Backend now owns history — we just send query + session_id
+      body: JSON.stringify({ query, session_id: _activeSid || null }),
+    }, 300000);
     const data = await res.json();
     removeTypingIndicator();
 
@@ -135,13 +123,11 @@ async function ragSearch(queryOverride) {
 
     let sourcesHtml = "";
     if (data.results && data.results.length > 0) {
-      // Store results on the window object for citation lookups
       window._lastSourceResults = data.results;
-      
       sourcesHtml = `
         <div style="margin-top:16px; display:flex; gap:8px;">
-            <button class="btn btn-sm btn-outline chat-sources-trigger" 
-                    style="font-size:0.75rem; padding:6px 14px; border-radius:12px; display:flex; align-items:center; gap:6px; background:rgba(108,92,231,0.05);" 
+            <button class="btn btn-sm btn-outline chat-sources-trigger"
+                    style="font-size:0.75rem; padding:6px 14px; border-radius:12px; display:flex; align-items:center; gap:6px; background:rgba(108,92,231,0.05);"
                     onclick="window.openSourcesPanel()">
                 <i class="fas fa-stream" style="font-size:0.8rem; color:var(--accent);"></i>
                 View ${data.total || data.results.length} References
@@ -149,16 +135,14 @@ async function ragSearch(queryOverride) {
         </div>`;
     }
 
-    const aiMsg = addChatMessage("ai", `
+    addChatMessage("ai", `
       <div class="chat-msg-avatar" style="background:var(--accent-bg);color:var(--accent)">🧠</div>
       <div class="chat-msg-bubble">
         <div class="ai-answer-container">${answerContent}</div>
         ${sourcesHtml}
       </div>`);
 
-    if(typeof sessionAddMessage !== 'undefined') {
-       sessionAddMessage('ai', data.answer || answerContent.replace(/<[^>]+>/g, ''));
-    }
+    // Backend saved everything — no sessionAddMessage needed
 
   } catch (err) {
     removeTypingIndicator();

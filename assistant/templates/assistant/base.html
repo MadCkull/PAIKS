@@ -11,13 +11,13 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet" />
   <!-- Modular CSS Architecture -->
-  <link rel="stylesheet" href="{% static 'assistant/css/variables.css' %}" />
-  <link rel="stylesheet" href="{% static 'assistant/css/layout.css' %}" />
-  <link rel="stylesheet" href="{% static 'assistant/css/components.css' %}" />
-  <link rel="stylesheet" href="{% static 'assistant/css/chat.css' %}" />
-  <link rel="stylesheet" href="{% static 'assistant/css/modals.css' %}" />
-  <link rel="stylesheet" href="{% static 'assistant/css/animations.css' %}" />
-  <link rel="stylesheet" href="{% static 'assistant/css/references.css' %}" />
+  <link rel="stylesheet" href="{% static 'assistant/css/variables.css' %}?v=5" />
+  <link rel="stylesheet" href="{% static 'assistant/css/layout.css' %}?v=5" />
+  <link rel="stylesheet" href="{% static 'assistant/css/components.css' %}?v=5" />
+  <link rel="stylesheet" href="{% static 'assistant/css/chat.css' %}?v=5" />
+  <link rel="stylesheet" href="{% static 'assistant/css/modals.css' %}?v=5" />
+  <link rel="stylesheet" href="{% static 'assistant/css/animations.css' %}?v=5" />
+  <link rel="stylesheet" href="{% static 'assistant/css/references.css' %}?v=5" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
   <link rel="icon" href="{% static 'assistant/favicon.ico' %}" type="image/x-icon" />
   {% block extra_head %}{% endblock %}
@@ -68,16 +68,16 @@
   </script>
 
   <!-- Modular JS Architecture -->
-  <script src="{% static 'assistant/js/app.js' %}"></script>
+  <script src="{% static 'assistant/js/app.js' %}?v=3"></script>
   <script src="{% static 'assistant/js/config.js' %}"></script>
   <script src="{% static 'assistant/js/utils.js' %}"></script>
   <script src="{% static 'assistant/js/auth.js' %}"></script>
-  <script src="{% static 'assistant/js/chat.js' %}"></script>
   <script src="{% static 'assistant/js/sessions.js' %}"></script>
+  <script src="{% static 'assistant/js/chat.js' %}"></script>
   <script src="{% static 'assistant/js/drive.js' %}"></script>
   <script src="{% static 'assistant/js/dashboard.js' %}"></script>
-  <script src="{% static 'assistant/js/settings.js' %}"></script>
-  <script src="{% static 'assistant/js/toolbar.js' %}"></script>
+  <script src="{% static 'assistant/js/settings.js' %}?v=2"></script>
+  <script src="{% static 'assistant/js/toolbar.js' %}?v=5"></script>
   {% block extra_js %}{% endblock %}
 </body>
 
