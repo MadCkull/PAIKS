@@ -13,10 +13,14 @@ def settings_view(request):
         try:
             data = json.loads(request.body)
             current = load_app_settings()
-            # Update only specific allowed keys
-            for key in ["cloud_enabled", "local_enabled", "local_root_path", "drive_folder_id", "drive_folder_name"]:
-                if key in data:
-                    current[key] = data[key]
+            
+            # Deep merge logic: for each category in default settings,
+            # if the payload has that category, update it.
+            for cat in ["general", "sources", "rag", "models", "data"]:
+                if cat in data and isinstance(data[cat], dict):
+                    if cat not in current: current[cat] = {}
+                    current[cat].update(data[cat])
+            
             save_app_settings(current)
             return JsonResponse({"status": "ok", "settings": current})
         except Exception as e:

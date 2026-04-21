@@ -422,7 +422,7 @@ def _cloud_poll_worker():
             from django.db import close_old_connections
             close_old_connections()
             
-            settings = load_app_settings()
+            settings = load_app_settings().get("sources", {})
             if settings.get("cloud_enabled"):
                 creds = get_creds()
                 if creds:
@@ -516,7 +516,7 @@ def start_sync_engine():
     _polling_thread.start()
 
     # Start Watchdog
-    settings = load_app_settings()
+    settings = load_app_settings().get("sources", {})
     local_root = settings.get("local_root_path")
     if settings.get("local_enabled") and local_root and os.path.exists(local_root):
         _observer = Observer()

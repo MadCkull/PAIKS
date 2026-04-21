@@ -16,7 +16,7 @@ from api.services.rag.ingestion.pipeline import ingest_nodes_to_collection
 logger = logging.getLogger(__name__)
 
 def get_tree(request):
-    settings = load_app_settings()
+    settings = load_app_settings().get("sources", {})
     root_path = settings.get("local_root_path")
     if not root_path or not os.path.exists(root_path):
         return JsonResponse({"error": "Local root path not set or invalid"}, status=400)

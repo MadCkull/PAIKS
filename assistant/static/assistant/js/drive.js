@@ -233,29 +233,30 @@ window.preloadDriveBackground = function() {
     let settings = {}, stats = {};
     
     try {
-      const [sRes, setRes, stRes] = await Promise.all([
+      const [sRes, stRes] = await Promise.all([
         fetchWithTimeout(`${API_BASE}/drive/selections`, {}, 5000).catch(()=>({ json:()=>({selected:[],disabled:[],errors:[],synced:[]}) })),
-        fetchWithTimeout(`${API_BASE}/system/settings`, {}, 5000).catch(()=>({ json:()=>({}) })),
         fetchWithTimeout(`${API_BASE}/drive/stats`, {}, 5000).catch(()=>({ json:()=>({}) }))
       ]);
       _selections = await sRes.json();
       if (!_selections.errors) _selections.errors = [];
       if (!_selections.synced) _selections.synced = [];
-      settings = await setRes.json();
+      
       stats = await stRes.json();
+      settings = window.appSettings || {};
+      const sources = settings.sources || {};
       
       const fetchPromises = [];
-      if (!localMode && stats.authenticated && settings.cloud_enabled) {
+      if (!localMode && stats.authenticated && sources.cloud_enabled) {
         fetchPromises.push(
           fetchWithTimeout(`${API_BASE}/drive/files?pageSize=100`, {}, 10000)
           .then(r => r.json())
           .then(data => {
             _driveFiles = data.files || [];
-            _activeRootCloudName = data.folder?.name || stats.folder?.name || "Google Drive";
+            _activeRootCloudName = data.folder?.name || data.folder?.folder_name || stats.folder?.name || stats.folder?.folder_name || sources.drive_folder_name || "Google Drive";
           }).catch(()=>{})
         );
       }
-      if (settings.local_enabled && settings.local_root_path) {
+      if (sources.local_enabled && sources.local_root_path) {
         fetchPromises.push(
           fetchWithTimeout(`${API_BASE}/local/tree`, {}, 10000)
           .then(r => r.json())

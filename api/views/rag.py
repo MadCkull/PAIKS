@@ -211,6 +211,7 @@ def search(request):
     if not query:
         return JsonResponse({"error": "query is required"}, status=400)
 
+    app_settings = load_app_settings()
     session_id = payload.get("session_id", None)
 
     # ── Persist user message & load history from DB ──────────────────────
@@ -229,8 +230,9 @@ def search(request):
                 content=query,
                 metadata=None
             )
-            # Build history array from last 10 DB messages (excluding the one we just saved)
-            prev_msgs = session_obj.messages.using('chats').order_by('-created_at')[1:11]
+            # Build history array from configured limit (default 6 msgs)
+            limit = int(app_settings.get("general", {}).get("context_memory_limit", 6))
+            prev_msgs = session_obj.messages.using('chats').order_by('-created_at')[1:limit+1]
             history = [
                 {'role': m.role if m.role != 'ai' else 'assistant', 'content': m.content}
                 for m in reversed(list(prev_msgs))
@@ -243,9 +245,9 @@ def search(request):
     tracer.log_section("1. RAW USER QUERY", {"query": query})
     tracer.log_section("2. CONVERSATION HISTORY (from DB)", history if history else "(none)")
 
-    app_settings = load_app_settings()
-    cloud_enabled = app_settings.get("cloud_enabled", True)
-    local_enabled = app_settings.get("local_enabled", True)
+    src_cfg = app_settings.get("sources", {})
+    cloud_enabled = src_cfg.get("cloud_enabled", True)
+    local_enabled = src_cfg.get("local_enabled", True)
     tracer.log_section("3. APP SETTINGS", {
         "cloud_enabled": cloud_enabled,
         "local_enabled": local_enabled,

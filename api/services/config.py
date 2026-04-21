@@ -20,11 +20,36 @@ LOCAL_ALLOWED_EXTENSIONS = {".pdf", ".docx", ".doc", ".txt", ".md", ".csv"}
 LOCAL_FILES_PATH.mkdir(exist_ok=True, parents=True)
 
 _DEFAULT_APP_SETTINGS = {
-    "cloud_enabled": True,
-    "local_enabled": True,
-    "local_root_path": None,
-    "drive_folder_id": None,
-    "drive_folder_name": None,
+    "general": {
+        "system_prompt": "",
+        "context_memory_limit": 6,
+        "accent_color": "purple",
+    },
+    "sources": {
+        "cloud_enabled": False,
+        "local_enabled": True,
+        "local_root_path": None,
+        "drive_folder_id": None,
+        "drive_folder_name": None,
+    },
+    "rag": {
+        "chunk_size": 512,
+        "chunk_overlap": 64,
+        "top_k": 30,
+        "top_n": 5,
+        "rerank_enabled": True,
+        "auto_summarise": False,
+    },
+    "models": {
+        "cloud_llm_enabled": False,
+        "cloud_provider": "Google Gemini",
+        "cloud_key": "",
+        "cloud_model": "gemini-1.5-pro",
+        "embed_model": "nomic-embed-text",
+    },
+    "data": {
+        "sync_interval": "30",
+    }
 }
 
 _DEFAULT_LLM_CONFIG = {
@@ -34,25 +59,18 @@ _DEFAULT_LLM_CONFIG = {
 }
 
 def load_app_settings() -> dict:
-    # ── Migration ──────────────────────────────────────────
-    if not APP_SETTINGS_PATH.exists() and FOLDER_CONFIG_PATH.exists():
-        try:
-            old = json.loads(FOLDER_CONFIG_PATH.read_text(encoding="utf-8"))
-            settings = dict(_DEFAULT_APP_SETTINGS)
-            settings["drive_folder_id"] = old.get("folder_id")
-            settings["drive_folder_name"] = old.get("folder_name")
-            save_app_settings(settings)
-            return settings
-        except Exception:
-            pass
-            
     if APP_SETTINGS_PATH.exists():
         try:
             data = json.loads(APP_SETTINGS_PATH.read_text(encoding="utf-8"))
-            return {**_DEFAULT_APP_SETTINGS, **data}
+            # Category-based merge for robustness
+            settings = json.loads(json.dumps(_DEFAULT_APP_SETTINGS)) # deep copy
+            for cat in settings:
+                if cat in data and isinstance(data[cat], dict):
+                    settings[cat].update(data[cat])
+            return settings
         except Exception:
             pass
-    return dict(_DEFAULT_APP_SETTINGS)
+    return json.loads(json.dumps(_DEFAULT_APP_SETTINGS))
 
 def save_app_settings(data: dict):
     APP_SETTINGS_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -68,14 +86,16 @@ def save_cache(data):
 def load_folder_config():
     # Deprecated: use load_app_settings instead
     settings = load_app_settings()
-    if settings.get("drive_folder_id"):
-        return {"folder_id": settings["drive_folder_id"], "folder_name": settings["drive_folder_name"]}
+    src = settings.get("sources", {})
+    if src.get("drive_folder_id"):
+        return {"folder_id": src["drive_folder_id"], "folder_name": src["drive_folder_name"]}
     return None
 
 def save_folder_config(folder_id, folder_name):
     settings = load_app_settings()
-    settings["drive_folder_id"] = folder_id
-    settings["drive_folder_name"] = folder_name
+    if "sources" not in settings: settings["sources"] = {}
+    settings["sources"]["drive_folder_id"] = folder_id
+    settings["sources"]["drive_folder_name"] = folder_name
     save_app_settings(settings)
 
 def load_llm_config() -> dict:

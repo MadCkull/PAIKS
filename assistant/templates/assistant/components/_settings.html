@@ -1,99 +1,543 @@
-<!-- ── SETTINGS MODAL ────────────────────────────────────────────── -->
+<!-- ── SETTINGS OVERLAY ────────────────────────────────────────────── -->
 <div id="settings-overlay" class="overlay hidden">
-  <div class="modal modal-md">
-    <div class="modal-header">
-      <h3>⚙️ Settings</h3>
-      <button class="btn-close btn-icon" onclick="closeModal('settings-overlay')">✕</button>
-    </div>
-    <div class="modal-body">
+  <div class="settings-modal">
 
-      <!-- Account -->
-      <p class="section-label" style="margin:0 0 12px;">Account</p>
-      <div id="settings-account-section" style="margin-bottom:20px;">
-        <!-- Populated by settings.js -->
-        <div style="padding:12px;color:var(--text-dim);font-size:.85rem;">Loading...</div>
-      </div>
-
-      <hr class="divider" />
-
-      <p class="section-label" style="margin:0 0 12px;">Data Sources</p>
-
-      <!-- Google Drive -->
-      <div class="source-card" id="card-cloud">
-        <div class="source-icon">☁️</div>
-        <div class="source-info">
-          <div class="source-name">Google Drive</div>
-          <div class="source-path" id="settings-drive-folder">Checking...</div>
-          <div class="source-status" id="settings-drive-status">
-            <span class="dot"></span> <span>Checking...</span>
-          </div>
-          <button class="source-action-btn" id="btn-cloud-action" onclick="connectDrive()">Connect</button>
-        </div>
-        <div class="source-toggle-wrapper">
-          <label class="switch">
-            <input type="checkbox" id="toggle-cloud" onchange="toggleSource('cloud', this.checked)">
-            <span class="slider"></span>
-          </label>
+    <!-- Header -->
+    <div class="sm-header">
+      <div class="sm-header-left">
+        <div class="sm-header-icon"><i class="fas fa-sliders-h"></i></div>
+        <div>
+          <div class="sm-header-title">Settings</div>
+          <div class="sm-header-sub">PAIKS · AI Assistant</div>
         </div>
       </div>
-
-      <!-- Local Files -->
-      <div class="source-card" id="card-local">
-        <div class="source-icon">💻</div>
-        <div class="source-info">
-          <div class="source-name">Local Files</div>
-          <div class="source-path" id="settings-local-folder">No folder selected</div>
-          <div class="source-status" id="settings-local-status">
-            <span class="dot"></span> <span>Ready</span>
-          </div>
-          <button class="source-action-btn" onclick="openLocalFolderPicker()">Browse Folder</button>
-        </div>
-        <div class="source-toggle-wrapper">
-          <label class="switch">
-            <input type="checkbox" id="toggle-local" onchange="toggleSource('local', this.checked)">
-            <span class="slider"></span>
-          </label>
-        </div>
+      <div class="autosave-badge" id="autosave-badge">
+        <div class="autosave-dot"></div> Saved
       </div>
-
-      <hr class="divider" />
-
-      <!-- LLM Config -->
-      <p class="section-label" style="margin:0 0 12px;">LLM Configuration</p>
-      <div class="form-group">
-        <label>Provider</label>
-        <select id="llm-provider-select" class="form-select" onchange="onProviderChange()">
-          <option value="ollama">Ollama (Local)</option>
-          <option value="openai_compat">LM Studio / OpenAI Compatible</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Endpoint URL</label>
-        <input id="llm-url-input" type="text" class="form-input" value="http://localhost:11434" />
-      </div>
-      <div class="form-group">
-        <label>Embedding Model</label>
-        <input type="text" class="form-input" value="all-MiniLM-L6-v2 (built-in)" disabled style="opacity:.6;" />
-        <p style="font-size:.75rem;color:var(--text-dim);margin-top:6px;">ChromaDB default ONNX embedding model.</p>
-      </div>
-      <button class="btn btn-primary w-100" onclick="saveLLMConfig()">Save Configuration</button>
-
-      <hr class="divider" />
-
-      <!-- Logout -->
-      <button class="btn btn-outline w-100" onclick="logoutPaiks()" style="color:var(--text-dim);border-color:var(--border-dim);margin-top:4px;">
-        🚪 Sign Out / Switch Account
+      <button class="btn-close" onclick="closeModal('settings-overlay')">
+        <i class="fas fa-times"></i>
       </button>
-
     </div>
-  </div>
-</div>
 
-<!-- ── LOCAL FOLDER PICKER MODAL ──────────────────────────────────────── -->
+    <!-- Tabs -->
+    <div class="sm-tabs" id="sm-tabs">
+      <button class="sm-tab active" data-tab="general" onclick="switchSettingsTab(this,'general')">
+        <i class="fas fa-sliders"></i> General
+      </button>
+      <button class="sm-tab" data-tab="sources" onclick="switchSettingsTab(this,'sources')">
+        <i class="fas fa-database"></i> Sources
+      </button>
+      <button class="sm-tab" data-tab="rag" onclick="switchSettingsTab(this,'rag')">
+        <i class="fas fa-layer-group"></i> RAG
+      </button>
+      <button class="sm-tab" data-tab="models" onclick="switchSettingsTab(this,'models')">
+        <i class="fas fa-microchip"></i> Models
+      </button>
+      <button class="sm-tab" data-tab="data" onclick="switchSettingsTab(this,'data')">
+        <i class="fas fa-shield-halved"></i> Data &amp; Cache
+      </button>
+    </div>
+
+    <!-- Body -->
+    <div class="sm-body" id="sm-body">
+
+      <!-- ━━━━━━━━━━━━━━━━  TAB: General  ━━━━━━━━━━━━━━━━ -->
+      <div class="tab-panel active" id="tab-general">
+
+        <div class="section-label">
+          <i class="fas fa-message" style="font-size:.65rem;opacity:.7"></i>
+          Assistant Behaviour
+        </div>
+
+        <!-- System Prompt -->
+        <div class="form-group">
+          <label class="form-label">System Prompt / Custom Instructions</label>
+          <textarea class="form-textarea" id="system-prompt"
+            placeholder="You are PAIKS, a helpful AI assistant with access to the user's drive and local files. Be concise, accurate, and cite your sources…"
+            style="min-height:130px"
+            oninput="settingsTriggerAutosave()"></textarea>
+          <div style="display:flex;justify-content:flex-end;margin-top:2px;">
+            <span class="hint-chip" id="sp-char-count">
+              <i class="fas fa-font" style="font-size:.6rem"></i> 0 / 2000
+            </span>
+          </div>
+        </div>
+
+        <div class="section-label">
+          <i class="fas fa-brain" style="font-size:.65rem;opacity:.7"></i>
+          Memory
+        </div>
+
+        <!-- Context Memory Limit — fixed alignment -->
+        <div class="setting-row">
+          <div class="setting-row-icon icon-purple"><i class="fas fa-memory"></i></div>
+          <div class="setting-row-text">
+            <h4>Context Memory Limit</h4>
+            <p>Maximum past messages kept in the active conversation. Higher = longer memory, more resource use.</p>
+          </div>
+          <div class="setting-row-control" style="flex-direction:column;align-items:flex-end;gap:4px;min-width:170px;">
+            <div style="display:flex;align-items:center;gap:10px;width:100%;">
+              <input type="range" class="form-slider" id="ctx-slider" min="4" max="40" step="2" value="6"
+                style="flex:1;" oninput="settingsUpdateSlider(this,'ctx-val',' msgs')"/>
+              <span class="slider-value" id="ctx-val" style="min-width:58px;text-align:right;">6 msgs</span>
+            </div>
+            <span style="font-size:.68rem;color:var(--text-dim);align-self:flex-end;">previous messages</span>
+          </div>
+        </div>
+
+        <div class="section-label">
+          <i class="fas fa-palette" style="font-size:.65rem;opacity:.7"></i>
+          Appearance
+        </div>
+
+        <!-- Accent Color Picker -->
+        <div class="setting-row">
+          <div class="setting-row-icon icon-purple"><i class="fas fa-droplet"></i></div>
+          <div class="setting-row-text">
+            <h4>Accent Color</h4>
+            <p>Choose the primary color used throughout the interface.</p>
+          </div>
+          <div class="setting-row-control">
+            <div class="accent-picker" id="accent-picker">
+              <button class="accent-swatch active" data-accent="purple" title="Purple (Default)"
+                style="background:linear-gradient(135deg,#6c5ce7,#a78bfa);" onclick="setAccentColor('purple',this)"></button>
+              <button class="accent-swatch" data-accent="blue" title="Ocean Blue"
+                style="background:linear-gradient(135deg,#3b82f6,#60a5fa);" onclick="setAccentColor('blue',this)"></button>
+              <button class="accent-swatch" data-accent="cyan" title="Cyan"
+                style="background:linear-gradient(135deg,#0ea5e9,#38bdf8);" onclick="setAccentColor('cyan',this)"></button>
+              <button class="accent-swatch" data-accent="green" title="Emerald"
+                style="background:linear-gradient(135deg,#10b981,#34d399);" onclick="setAccentColor('green',this)"></button>
+              <button class="accent-swatch" data-accent="amber" title="Amber"
+                style="background:linear-gradient(135deg,#f59e0b,#fbbf24);" onclick="setAccentColor('amber',this)"></button>
+              <button class="accent-swatch" data-accent="rose" title="Rose"
+                style="background:linear-gradient(135deg,#f43f5e,#fb7185);" onclick="setAccentColor('rose',this)"></button>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /tab-general -->
+
+      <!-- ━━━━━━━━━━━━━━━━  TAB: Sources  ━━━━━━━━━━━━━━━━ -->
+      <div class="tab-panel" id="tab-sources">
+
+        <div class="section-label">
+          <i class="fas fa-cloud" style="font-size:.65rem;opacity:.7"></i>
+          Cloud
+        </div>
+
+
+        <!-- ── Google Drive Card ── -->
+        <div class="source-card sc-cloud" id="sc-drive">
+          <div class="sc-row">
+            <div class="sc-icon-wrap"><i class="fab fa-google-drive"></i></div>
+            <div class="sc-content">
+              <div class="sc-top-line">
+                <div class="sc-name-group">
+                  <span class="sc-name">Google Drive</span>
+                  <div class="sc-status-wrap">
+                    <div class="sc-status-pill" id="chip-drive">
+                      <span class="sc-status-dot setup" id="dot-drive"></span>
+                      <span class="sc-status-label" id="label-drive">Not configured</span>
+                    </div>
+                  </div>
+                </div>
+                <label class="toggle" title="Enable Google Drive">
+                  <input type="checkbox" id="toggle-cloud" onchange="toggleSource('cloud',this.checked)"/>
+                  <div class="toggle-track"><div class="toggle-thumb"></div></div>
+                </label>
+              </div>
+              <div class="sc-desc">Index and sync files from your Google Drive</div>
+              <div class="sc-folder-row">
+                <div class="sc-folder-pill">
+                  <i class="fas fa-folder"></i>
+                  <span class="sc-folder-text empty" id="path-drive-text">No root folder selected</span>
+                </div>
+                <button class="sc-change-btn" id="btn-cloud-action" onclick="openUniversalPicker('drive')">
+                  <i class="fas fa-pen-to-square"></i> Change Folder
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="sc-footer-strip">
+            <span class="sc-footer-stat"><span id="drive-file-count">&mdash;</span> files indexed</span>
+            <span class="sc-footer-time" id="drive-last-sync">Never synced</span>
+          </div>
+        </div>
+
+        <div class="section-label" style="margin-top:4px;">
+          <i class="fas fa-laptop" style="font-size:.65rem;opacity:.7"></i>
+          Local
+        </div>
+
+        <!-- ── Local Files Card ── -->
+        <div class="source-card sc-local" id="sc-local">
+          <div class="sc-row">
+            <div class="sc-icon-wrap"><i class="fas fa-hard-drive"></i></div>
+            <div class="sc-content">
+              <div class="sc-top-line">
+                <div class="sc-name-group">
+                  <span class="sc-name">Local Files</span>
+                  <div class="sc-status-wrap">
+                    <div class="sc-status-pill" id="chip-local">
+                      <span class="sc-status-dot disabled" id="dot-local"></span>
+                      <span class="sc-status-label" id="label-local">Not configured</span>
+                    </div>
+                  </div>
+                </div>
+                <label class="toggle" title="Enable local file indexing">
+                  <input type="checkbox" id="toggle-local" onchange="toggleSource('local',this.checked)"/>
+                  <div class="toggle-track"><div class="toggle-thumb"></div></div>
+                </label>
+              </div>
+              <div class="sc-desc">Index directories and files on this machine</div>
+              <div class="sc-folder-row">
+                <div class="sc-folder-pill">
+                  <i class="fas fa-folder-open"></i>
+                  <span class="sc-folder-text empty" id="settings-local-folder">No folder selected</span>
+                </div>
+                <button class="sc-change-btn" onclick="openUniversalPicker('local')">
+                  <i class="fas fa-pen-to-square"></i> Browse Folder
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="sc-footer-strip">
+            <span class="sc-footer-stat"><span id="local-file-count">&mdash;</span> files indexed</span>
+            <span class="sc-footer-time" id="local-last-sync">Never synced</span>
+          </div>
+        </div>
+
+      </div><!-- /tab-sources -->
+
+      <!-- ━━━━━━━━━━━━━━━━  TAB: RAG  ━━━━━━━━━━━━━━━━ -->
+      <div class="tab-panel" id="tab-rag">
+
+        <div class="section-label">
+          <i class="fas fa-scissors" style="font-size:.65rem;opacity:.7"></i>
+          Chunking
+        </div>
+
+        <div class="config-grid">
+          <div class="config-tile">
+            <div class="config-tile-label">Chunk Size <i class="fas fa-question-circle"></i></div>
+            <div class="slider-row">
+              <input type="range" class="form-slider" id="chunk-size"
+                min="128" max="2048" step="64" value="512"
+                oninput="settingsUpdateSlider(this,'chunk-size-val','');updateChunkPreview()"/>
+              <span class="slider-value" id="chunk-size-val">512</span>
+            </div>
+            <span style="font-size:.68rem;color:var(--text-dim)">tokens per chunk</span>
+          </div>
+
+          <div class="config-tile">
+            <div class="config-tile-label">Chunk Overlap <i class="fas fa-question-circle"></i></div>
+            <div class="slider-row">
+              <input type="range" class="form-slider" id="chunk-overlap"
+                min="0" max="512" step="16" value="64"
+                oninput="settingsUpdateSlider(this,'chunk-overlap-val','');updateChunkPreview()"/>
+              <span class="slider-value" id="chunk-overlap-val">64</span>
+            </div>
+            <span style="font-size:.68rem;color:var(--text-dim)">token overlap</span>
+          </div>
+        </div>
+
+        <!-- Chunk preview -->
+        <div>
+          <div class="chunk-preview-label">Live Preview</div>
+          <div class="chunk-preview">
+            …document text flows here…
+            <span class="chunk-highlight">│ chunk boundary</span>
+            …overlapping context continues for
+            <span class="chunk-highlight" id="preview-overlap">64 tokens</span>
+            into next chunk, then next
+            <span class="chunk-highlight" id="preview-size">512 tokens</span>
+            begin…
+          </div>
+        </div>
+
+        <div class="section-label">
+          <i class="fas fa-magnifying-glass" style="font-size:.65rem;opacity:.7"></i>
+          Retrieval
+        </div>
+
+        <div class="config-grid">
+          <div class="config-tile">
+            <div class="config-tile-label">Base Retrieval (Top-K)</div>
+            <div class="slider-row">
+              <input type="range" class="form-slider" id="topk"
+                min="5" max="60" step="5" value="30"
+                oninput="settingsUpdateSlider(this,'topk-val','')"/>
+              <span class="slider-value" id="topk-val">30</span>
+            </div>
+            <span style="font-size:.68rem;color:var(--text-dim)">chunks fetched from DB</span>
+          </div>
+
+          <div class="config-tile">
+            <div class="config-tile-label">Final Context (Top-N)</div>
+            <div class="slider-row">
+              <input type="range" class="form-slider" id="topn"
+                min="1" max="20" step="1" value="5"
+                oninput="settingsUpdateSlider(this,'topn-val','')"/>
+              <span class="slider-value" id="topn-val">5</span>
+            </div>
+            <span style="font-size:.68rem;color:var(--text-dim)">chunks injected into LLM</span>
+          </div>
+        </div>
+
+        <div class="section-label">
+          <i class="fas fa-gear" style="font-size:.65rem;opacity:.7"></i>
+          Indexing
+        </div>
+
+        <!-- Re-ranking -->
+        <div class="setting-row">
+          <div class="setting-row-icon icon-purple"><i class="fas fa-sort-amount-desc"></i></div>
+          <div class="setting-row-text">
+            <h4>Cross-Encoder Re-ranking</h4>
+            <p>Re-score retrieved chunks with BAAI/bge-reranker for higher precision. Slightly slower on first query.</p>
+          </div>
+          <div class="setting-row-control">
+            <label class="toggle">
+              <input type="checkbox" id="rerank-toggle" checked onchange="settingsTriggerAutosave()"/>
+              <div class="toggle-track"><div class="toggle-thumb"></div></div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Auto Summarisation — greyed out (coming soon) -->
+        <div class="setting-row setting-row-disabled" title="Coming soon — backend not yet implemented">
+          <div class="setting-row-icon icon-amber"><i class="fas fa-wand-magic-sparkles"></i></div>
+          <div class="setting-row-text">
+            <h4>Auto-Summarise on Ingest <span class="coming-soon-badge">Soon</span></h4>
+            <p>Preemptively generate document summaries when files are ingested. Improves broad question quality.</p>
+          </div>
+          <div class="setting-row-control">
+            <label class="toggle">
+              <input type="checkbox" id="auto-summarise-toggle" disabled/>
+              <div class="toggle-track"><div class="toggle-thumb"></div></div>
+            </label>
+          </div>
+        </div>
+
+      </div><!-- /tab-rag -->
+
+      <!-- ━━━━━━━━━━━━━━━━  TAB: Models  ━━━━━━━━━━━━━━━━ -->
+      <div class="tab-panel" id="tab-models">
+
+        <div class="section-label">
+          <i class="fas fa-server" style="font-size:.65rem;opacity:.7"></i>
+          Local Engine (Ollama)
+        </div>
+
+        <!-- Ollama Card — simplified, no provider/url/model fields -->
+        <div class="model-engine-card">
+          <div class="mec-header">
+            <div class="mec-icon ollama">llm</div>
+            <div class="mec-info">
+              <div class="mec-name">
+                Ollama
+                <span class="core-badge">Core Engine</span>
+                <div class="status-dot gray" id="settings-llm-dot" style="margin-left:2px;" title="Checking..."></div>
+              </div>
+              <div class="mec-sub">Local-first model inference · endpoint configured via <code style="font-size:.75em;background:var(--glass-bg);padding:1px 5px;border-radius:4px;">.env</code></div>
+            </div>
+            <div style="width:30px;height:30px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:.85rem;" title="Cannot be disabled">
+              <i class="fas fa-lock"></i>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-label" style="margin-top:4px;">
+          <i class="fas fa-cloud-bolt" style="font-size:.65rem;opacity:.7"></i>
+          Cloud LLM API
+        </div>
+
+        <!-- Cloud LLM Card — togglable -->
+        <div class="model-engine-card" id="cloud-llm-card">
+          <div class="mec-header">
+            <div class="mec-icon api"><i class="fas fa-cloud"></i></div>
+            <div class="mec-info">
+              <div class="mec-name">
+                Cloud LLM
+                <div class="status-dot gray" id="dot-cloud-llm" title="Disabled"></div>
+              </div>
+              <div class="mec-sub">Fallback to a third-party API when enabled</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="toggle-cloud-llm" onchange="onCloudLLMToggle(this.checked)"/>
+              <div class="toggle-track"><div class="toggle-thumb"></div></div>
+            </label>
+          </div>
+          <!-- Collapsible body — hidden when toggle is off -->
+          <div class="mec-body mec-body-disabled" id="cloud-llm-body">
+            <div class="form-group">
+              <label class="form-label">Provider</label>
+              <select class="form-select" id="cloud-llm-provider" onchange="settingsTriggerAutosave()">
+                <option>Google Gemini</option>
+                <option>OpenAI</option>
+                <option>Anthropic Claude</option>
+                <option>Groq</option>
+                <option>Custom (OpenAI-compatible)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">API Key</label>
+              <input type="password" class="form-input" id="cloud-llm-key"
+                placeholder="Paste your API key…" oninput="settingsTriggerAutosave()" autocomplete="off"/>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Model <span>· depends on provider</span></label>
+              <input type="text" class="form-input" id="cloud-llm-model"
+                placeholder="e.g. gemini-1.5-pro, gpt-4o, claude-3-5-sonnet"
+                oninput="settingsTriggerAutosave()"/>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-label" style="margin-top:4px;">
+          <i class="fas fa-vector-square" style="font-size:.65rem;opacity:.7"></i>
+          Embeddings
+        </div>
+
+        <!-- Embedding Model -->
+        <div class="setting-row">
+          <div class="setting-row-icon icon-green"><i class="fas fa-network-wired"></i></div>
+          <div class="setting-row-text">
+            <h4>Embedding Model</h4>
+            <p>Ollama model used to generate vector embeddings for RAG indexing. Must be an embed-type model.</p>
+          </div>
+          <div class="setting-row-control" style="min-width:220px;">
+            <select class="form-select" id="embed-model-select" style="width:220px;" onchange="settingsTriggerAutosave()">
+              <option value="nomic-embed-text">nomic-embed-text (274M)</option>
+              <option value="mxbai-embed-large">mxbai-embed-large (335M)</option>
+              <option value="all-minilm">all-minilm (23M) · fast</option>
+              <option value="bge-m3">bge-m3 (570M) · multilingual</option>
+            </select>
+          </div>
+        </div>
+
+      </div><!-- /tab-models -->
+
+      <!-- ━━━━━━━━━━━━━━━━  TAB: Data & Cache  ━━━━━━━━━━━━━━━━ -->
+      <div class="tab-panel" id="tab-data">
+
+        <div class="section-label">
+          <i class="fas fa-rotate" style="font-size:.65rem;opacity:.7"></i>
+          Sync
+        </div>
+
+        <!-- Sync Interval — greyed out (coming soon) -->
+        <div class="setting-row setting-row-disabled" title="Coming soon — backend not yet implemented">
+          <div class="setting-row-icon icon-blue"><i class="fas fa-arrows-rotate"></i></div>
+          <div class="setting-row-text">
+            <h4>Local Sync Interval <span class="coming-soon-badge">Soon</span></h4>
+            <p>How often PAIKS re-indexes local and cloud files in the background.</p>
+          </div>
+          <div class="setting-row-control">
+            <select class="form-select" id="sync-interval-select" style="width:180px;" disabled>
+              <option value="realtime">Real-time (watchdog)</option>
+              <option value="15">Every 15 minutes</option>
+              <option value="30" selected>Every 30 minutes</option>
+              <option value="60">Every hour</option>
+              <option value="manual">Manual only</option>
+            </select>
+          </div>
+        </div>
+
+
+        <div class="section-label">
+          <i class="fas fa-trash-can" style="font-size:.65rem;opacity:.7"></i>
+          Danger Zone
+        </div>
+
+        <div class="section-label">
+          <i class="fas fa-trash-can" style="font-size:.65rem;opacity:.7"></i>
+          Danger Zone
+        </div>
+
+        <!-- Clear Mirror Cache -->
+        <div class="danger-row">
+          <div class="danger-row-text">
+            <h4>Clear Mirror Cache</h4>
+            <p>Delete the local file mirror cache. Files will be re-fetched on next sync.</p>
+          </div>
+          <div>
+            <button class="btn-warn" onclick="settingsToggleConfirm('mirror')">
+              <i class="fas fa-broom"></i> Clear Cache
+            </button>
+            <div class="confirm-expand" id="confirm-mirror">
+              <div class="confirm-inner">
+                <p>This will delete cached copies. Are you sure?</p>
+                <button class="btn-confirm-yes" onclick="settingsExecClear('mirror')">Yes, clear</button>
+                <button class="btn-confirm-no" onclick="settingsToggleConfirm('mirror')">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Clear Chat History -->
+        <div class="danger-row">
+          <div class="danger-row-text">
+            <h4>Clear Chat History</h4>
+            <p>Permanently delete all saved conversation sessions from this browser.</p>
+          </div>
+          <div>
+            <button class="btn-warn" onclick="settingsToggleConfirm('chat')">
+              <i class="fas fa-comments-slash"></i> Clear History
+            </button>
+            <div class="confirm-expand" id="confirm-chat">
+              <div class="confirm-inner">
+                <p>All saved chats will be permanently deleted.</p>
+                <button class="btn-confirm-yes" onclick="settingsExecClear('chat')">Yes, delete</button>
+                <button class="btn-confirm-no" onclick="settingsToggleConfirm('chat')">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Wipe Vector DB -->
+        <div class="danger-row">
+          <div class="danger-row-text">
+            <h4>Wipe Vector Database</h4>
+            <p>Remove all indexed embeddings. Your original files are NOT deleted. Re-indexing required.</p>
+          </div>
+          <div>
+            <button class="btn-danger" onclick="settingsToggleConfirm('db')">
+              <i class="fas fa-database"></i> Wipe Database
+            </button>
+            <div class="confirm-expand" id="confirm-db">
+              <div class="confirm-inner">
+                <p>All vector embeddings will be permanently wiped.</p>
+                <button class="btn-confirm-yes" onclick="settingsExecClear('db')">Yes, wipe</button>
+                <button class="btn-confirm-no" onclick="settingsToggleConfirm('db')">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sign Out -->
+        <div class="danger-row">
+          <div class="danger-row-text">
+            <h4>Sign Out</h4>
+            <p>Revoke Google authentication and disconnect all cloud sources.</p>
+          </div>
+          <button class="btn-danger" onclick="logoutPaiks()">
+            <i class="fas fa-right-from-bracket"></i> Sign Out
+          </button>
+        </div>
+
+      </div><!-- /tab-data -->
+
+    </div><!-- /sm-body -->
+  </div><!-- /settings-modal -->
+</div><!-- /settings-overlay -->
+
+
+<!-- ── UNIVERSAL FOLDER PICKER (Local + Cloud) ────────────────────── -->
 <div id="local-picker-overlay" class="overlay hidden" style="z-index:10001;">
   <div class="modal modal-md">
     <div class="modal-header">
-      <h3>📁 Select Local Root Folder</h3>
+      <h3 id="picker-modal-title">📁 Select Root Folder</h3>
       <button class="btn-close btn-icon" onclick="closeModal('local-picker-overlay')">✕</button>
     </div>
     <div class="modal-body" style="padding:0;">
@@ -106,7 +550,7 @@
     </div>
     <div class="modal-footer" style="padding:16px 20px;border-top:1px solid var(--glass-border);display:flex;justify-content:flex-end;gap:12px;">
       <button class="btn btn-outline btn-sm" onclick="closeModal('local-picker-overlay')">Cancel</button>
-      <button class="btn btn-primary btn-sm" id="btn-confirm-picker" disabled onclick="confirmLocalPicker()">Select Folder</button>
+      <button class="btn btn-primary btn-sm" id="btn-confirm-picker" disabled onclick="confirmUniversalPicker()">Select Folder</button>
     </div>
   </div>
 </div>

@@ -20,15 +20,23 @@ def folders(request):
     if not creds:
         return JsonResponse({"error": "Not authenticated"}, status=401)
 
+    parent_id = request.GET.get("parent_id", None)
+
     try:
         service = drive_service(creds)
         folders_list = []
         page_token = None
+
+        # If a parent_id is given, list only its direct children folders
+        base_q = "mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+        if parent_id:
+            base_q += f" and '{parent_id}' in parents"
+
         while True:
             params = {
                 "pageSize": 100,
                 "fields": "nextPageToken, files(id, name, modifiedTime)",
-                "q": "mimeType = 'application/vnd.google-apps.folder' and trashed = false",
+                "q": base_q,
                 "orderBy": "name",
             }
             if page_token:
@@ -43,10 +51,12 @@ def folders(request):
         return JsonResponse({
             "folders": folders_list,
             "current_folder": current,
+            "parent_id": parent_id,
         })
     except Exception as e:
         logger.error("drive_list_folders error: %s", str(e))
         return JsonResponse({"error": str(e)}, status=500)
+
 
 def set_folder(request):
     try:
@@ -302,10 +312,11 @@ def stats(request):
     disabled_total = DocumentTrack.objects.filter(sync_status="disabled").count()
     error_total = DocumentTrack.objects.filter(sync_status="error").count()
 
+    src_cfg = app_settings.get("sources", {})
     return JsonResponse({
         "authenticated": creds is not None,
-        "cloud_enabled": app_settings.get("cloud_enabled", True),
-        "local_enabled": app_settings.get("local_enabled", False),
+        "cloud_enabled": src_cfg.get("cloud_enabled", True),
+        "local_enabled": src_cfg.get("local_enabled", False),
         "cloud_total": cloud_total,
         "local_total": local_total,
         "documents_total": cloud_total + local_total,
@@ -315,5 +326,5 @@ def stats(request):
         "disabled_total": disabled_total,
         "error_total": error_total,
         "folder": load_folder_config(),
-        "local_root": app_settings.get("local_root_path")
+        "local_root": src_cfg.get("local_root_path")
     })

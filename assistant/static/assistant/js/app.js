@@ -145,6 +145,20 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (nameEl) nameEl.textContent = "Local User";
   }
 
+  window.appSettings = {};
+  
+  // ── Global Boot & Theme/Accent Init from Backend ─────────
+  try {
+    const res = await fetch(`${API_BASE}/system/settings`);
+    window.appSettings = await res.json();
+    if (window.appSettings.general && window.appSettings.general.accent_color && typeof setAccentColor === 'function') {
+      // Pass null as second arg to indicate it's not from a swatch click, and true to prevent autosave
+      setAccentColor(window.appSettings.general.accent_color, null, true);
+    }
+  } catch(e) {
+    console.warn("Failed to load global settings from backend", e);
+  }
+
   // Remove auth guard immediately  -  don't wait for anything
   if (typeof removeAuthGuard === "function") removeAuthGuard();
 
