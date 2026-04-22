@@ -2,15 +2,16 @@ let _driveFiles = [];
 let _localTree  = null;
 let _activeTab  = "cloud";
 let _selections = { selected: [], disabled: [], errors: [], synced: [] };
+let _cloudFolderCache = {}; // { driveId: [children] } — lazy load cache for Drive Manager
 
-const SUPPORTED_EXTS = ["pdf", "csv", "xlsx", "xls", "ppt", "pptx", "png", "jpg", "jpeg", "webp", "py", "md", "txt", "doc", "docx"];
+const SUPPORTED_EXTS = ["pdf", "docx", "txt", "md", "csv", "xlsx", "xls", "pptx"];
 
 function isSupportedFile(node, name) {
   if (node.type === "dir" || (node.mimeType && node.mimeType.includes("folder"))) return true;
   const ext = name.split('.').pop().toLowerCase();
   if (SUPPORTED_EXTS.includes(ext)) return true;
   if (node.mimeType) {
-    if (node.mimeType.includes("text") || node.mimeType.includes("pdf") || node.mimeType.includes("document")) return true;
+    if (node.mimeType.includes("text") || node.mimeType.includes("pdf") || node.mimeType.includes("document") || node.mimeType.includes("spreadsheet") || node.mimeType.includes("presentation")) return true;
   }
   return false;
 }
@@ -84,6 +85,9 @@ function renderTree(containerId, treeData, query = "", source = "cloud") {
       childHtml = node.files.map(f => buildHtml({...f, type: "file"})).join("");
     }
 
+    // For cloud folders without pre-loaded children, mark as lazy-loadable
+    const isCloudLazy = source === "cloud" && isDir && !isRoot && !childHtml && node.id;
+
     if (query && isDir && !childHtml && !isRoot) return "";
 
     const fileId = _getFileId(node, source);
@@ -124,15 +128,22 @@ function renderTree(containerId, treeData, query = "", source = "cloud") {
       try { safeKey = "open_" + btoa(unescape(encodeURIComponent(fileId))).replace(/=/g, ''); } catch(e) {}
       const openState = localStorage.getItem(safeKey) === "true" ? "open" : "";
       
+      // Cloud lazy-load: show spinner placeholder, fetch on toggle
+      const lazyPlaceholder = isCloudLazy
+        ? `<div class="tree-lazy-placeholder" style="padding:8px 16px;color:var(--text-dim);font-size:0.8rem;"><i class="fas fa-spinner fa-spin" style="margin-right:6px;"></i>Loading…</div>`
+        : "";
+      const lazyAttr = isCloudLazy ? `data-cloud-lazy="${node.id}"` : "";
+      
       return `
-        <details class="tree-details" ${openState} ontoggle="localStorage.setItem('${safeKey}', this.open)">
+        <details class="tree-details" ${openState} ${lazyAttr}
+          ontoggle="localStorage.setItem('${safeKey}', this.open); if(this.open && this.dataset.cloudLazy) _lazyLoadCloudFolder(this)">
           <summary class="tree-node tree-node-dir" style="${opac}">
             ${checkboxHtml}
             <span class="tree-icon">${icon}</span>
             <span class="tree-name">${escapeHtml(name)}</span>
           </summary>
           <div class="tree-children">
-            ${childHtml}
+            ${childHtml || lazyPlaceholder}
           </div>
         </details>
       `;
@@ -160,6 +171,103 @@ function renderTree(containerId, treeData, query = "", source = "cloud") {
 
   // After rendering, compute folder indeterminate states
   _updateAllFolderStates(container);
+}
+
+// ── Lazy Load Cloud Folder (on-demand) ─────────────────────────
+window._lazyLoadCloudFolder = async function(detailsEl) {
+  const folderId = detailsEl.dataset.cloudLazy;
+  if (!folderId) return;
+
+  // Remove the lazy marker so we don't re-fetch
+  delete detailsEl.dataset.cloudLazy;
+  detailsEl.removeAttribute("data-cloud-lazy");
+
+  const childContainer = detailsEl.querySelector(".tree-children");
+  if (!childContainer) return;
+
+  // Check cache
+  if (_cloudFolderCache[folderId]) {
+    _renderLazyChildren(childContainer, _cloudFolderCache[folderId], detailsEl);
+    return;
+  }
+
+  // Show loading
+  childContainer.innerHTML = '<div class="tree-lazy-placeholder" style="padding:8px 16px;color:var(--text-dim);font-size:0.8rem;"><i class="fas fa-spinner fa-spin" style="margin-right:6px;"></i>Loading…</div>';
+
+  try {
+    const res = await fetchWithTimeout(`${API_BASE}/drive/files?parent_id=${encodeURIComponent(folderId)}&pageSize=100`, {}, 10000);
+    const data = await res.json();
+    const files = data.files || [];
+    _cloudFolderCache[folderId] = files;
+    _renderLazyChildren(childContainer, files, detailsEl);
+  } catch(e) {
+    childContainer.innerHTML = '<div style="padding:8px 16px;color:var(--color-error);font-size:0.8rem;"><i class="fas fa-exclamation-triangle" style="margin-right:6px;"></i>Failed to load</div>';
+  }
+};
+
+function _renderLazyChildren(container, files, parentDetailsEl) {
+  if (!files.length) {
+    container.innerHTML = '<div style="padding:8px 16px;color:var(--text-dim);font-size:0.8rem;">Empty folder</div>';
+    return;
+  }
+
+  let html = "";
+  for (const f of files) {
+    const isDir = f.mimeType && f.mimeType.includes("folder");
+    const name = f.name || "Untitled";
+    const icon = isDir ? "📁" : driveFileIcon(f.mimeType, name);
+    const isSupported = isSupportedFile(f, name);
+    const fileId = `cloud__${f.id}`;
+    const isChecked = isSupported && _isFileChecked(fileId);
+    const hasError = _hasError(fileId);
+    const disabledAttr = !isSupported ? "disabled" : "";
+    const opac = !isSupported ? "opacity:0.35; pointer-events:none;" : "";
+
+    let statusIcon = "";
+    if (!isDir && isSupported && isChecked && hasError) {
+      statusIcon = `<i class="status-icon fas fa-exclamation-circle" style="color:#fb923c;font-size:0.7rem;margin-left:6px;" title="Indexing failed"></i>`;
+    }
+
+    const checkboxHtml = `
+      <input type="checkbox" class="paiks-cb" ${isChecked ? "checked" : ""} ${disabledAttr}
+             data-id="${escapeHtml(fileId)}" data-isdir="${isDir}" data-source="cloud"
+             onchange="toggleSelection(this)">
+    `;
+
+    if (isDir) {
+      let safeKey = "open_folder";
+      try { safeKey = "open_" + btoa(unescape(encodeURIComponent(fileId))).replace(/=/g, ''); } catch(e) {}
+
+      html += `
+        <details class="tree-details" data-cloud-lazy="${f.id}"
+          ontoggle="localStorage.setItem('${safeKey}', this.open); if(this.open && this.dataset.cloudLazy) _lazyLoadCloudFolder(this)">
+          <summary class="tree-node tree-node-dir" style="${opac}">
+            ${checkboxHtml}
+            <span class="tree-icon">${icon}</span>
+            <span class="tree-name">${escapeHtml(name)}</span>
+          </summary>
+          <div class="tree-children">
+            <div class="tree-lazy-placeholder" style="padding:8px 16px;color:var(--text-dim);font-size:0.8rem;"><i class="fas fa-spinner fa-spin" style="margin-right:6px;"></i>Loading…</div>
+          </div>
+        </details>`;
+    } else {
+      html += `
+        <div class="tree-node tree-node-file" style="${opac}">
+          ${checkboxHtml}
+          <span class="tree-icon">${icon}</span>
+          <span class="tree-name">${escapeHtml(name)}</span>
+          ${statusIcon}
+          ${f.size ? `<span class="tree-meta">${formatSize(f.size)}</span>` : ""}
+          ${!isSupported ? `<span class="tree-meta" style="color:#f87171;">(Unsupported)</span>` : ""}
+        </div>`;
+    }
+  }
+
+  container.innerHTML = html;
+
+  // Update parent folder checkbox states
+  const treeView = parentDetailsEl.closest(".tree-view");
+  if (treeView) _updateAllFolderStates(treeView);
 }
 
 // ── Three-state folder checkbox logic ──────────────────────────
@@ -213,9 +321,12 @@ function _computeFolderState(folderCb) {
 
 // ── Background Data Preloading ─────────────────────────────────
 let _bgPreloadPromise = null;
+let _preloadSeqId = 0;
 
 window.revalidateFileTree = async function() {
+  _preloadSeqId++; // Bump sequence to invalidate any older flying requests
   _bgPreloadPromise = null; // Invalidate cache
+  _cloudFolderCache = {}; // Clear lazy-load cache
   await window.preloadDriveBackground();
   
   // If the drive modal is open, silently redraw it
@@ -228,6 +339,8 @@ window.revalidateFileTree = async function() {
 window.preloadDriveBackground = function() {
   if (_bgPreloadPromise) return _bgPreloadPromise;
   
+  const currentSeqId = _preloadSeqId;
+
   _bgPreloadPromise = (async () => {
     const localMode = localStorage.getItem("paiks-mode") === "local";
     let settings = {}, stats = {};
@@ -237,30 +350,51 @@ window.preloadDriveBackground = function() {
         fetchWithTimeout(`${API_BASE}/drive/selections`, {}, 5000).catch(()=>({ json:()=>({selected:[],disabled:[],errors:[],synced:[]}) })),
         fetchWithTimeout(`${API_BASE}/drive/stats`, {}, 5000).catch(()=>({ json:()=>({}) }))
       ]);
+      
+      if (currentSeqId !== _preloadSeqId) return; // Stale execution trap
+      
       _selections = await sRes.json();
       if (!_selections.errors) _selections.errors = [];
       if (!_selections.synced) _selections.synced = [];
       
       stats = await stRes.json();
+      if (!window.appSettings || Object.keys(window.appSettings).length === 0) {
+        try {
+          const setRes = await fetchWithTimeout(`${API_BASE}/system/settings`, {}, 5000);
+          window.appSettings = await setRes.json();
+        } catch(e) {}
+      }
+      
       settings = window.appSettings || {};
       const sources = settings.sources || {};
       
+      // Aggressive State Cleansing - Zero Tolerance for Stale Data Persistence
+      const shouldFetchCloud = !localMode && stats.authenticated && sources.cloud_enabled;
+      const shouldFetchLocal = sources.local_enabled && sources.local_root_path;
+      
+      if (!shouldFetchCloud) _driveFiles = [];
+      if (!shouldFetchLocal) _localTree = null;
+      
       const fetchPromises = [];
-      if (!localMode && stats.authenticated && sources.cloud_enabled) {
+      if (shouldFetchCloud) {
         fetchPromises.push(
           fetchWithTimeout(`${API_BASE}/drive/files?pageSize=100`, {}, 10000)
           .then(r => r.json())
           .then(data => {
+            if (currentSeqId !== _preloadSeqId) return; // Stale execution trap
             _driveFiles = data.files || [];
             _activeRootCloudName = data.folder?.name || data.folder?.folder_name || stats.folder?.name || stats.folder?.folder_name || sources.drive_folder_name || "Google Drive";
           }).catch(()=>{})
         );
       }
-      if (sources.local_enabled && sources.local_root_path) {
+      if (shouldFetchLocal) {
         fetchPromises.push(
           fetchWithTimeout(`${API_BASE}/local/tree`, {}, 10000)
           .then(r => r.json())
-          .then(data => { _localTree = data; }).catch(()=>{})
+          .then(data => { 
+             if (currentSeqId !== _preloadSeqId) return; // Stale execution trap
+             _localTree = data; 
+          }).catch(()=>{})
         );
       }
       await Promise.all(fetchPromises);
@@ -275,6 +409,24 @@ window.updateDriveModal = async function() {
   const searchInput = document.getElementById("drive-search-input");
   const query = searchInput ? searchInput.value.trim() : "";
   const localMode = localStorage.getItem("paiks-mode") === "local";
+
+  const cloudTreeEl = document.getElementById("tree-cloud");
+  const localTreeEl = document.getElementById("tree-local");
+  // Smart Tab Switching Focus
+  const settings = window.appSettings || {};
+  const sources = settings.sources || {};
+  if (!sources.cloud_enabled && sources.local_enabled && _activeTab !== "local") {
+     const localTab = document.querySelector('#drive-tabs [data-tab="local"]');
+     if (localTab) {
+       _activeTab = "local";
+       localTab.click();
+     }
+  }
+
+  // Show loading spinner while preloading
+  const spinnerHtml = `<div style="text-align:center;padding:40px;"><i class="fas fa-spinner fa-spin" style="font-size:2rem;color:var(--accent);opacity:0.8;"></i><div style="margin-top:10px;color:var(--text-dim);font-size:0.9rem;">Crunching file system...</div></div>`;
+  if (cloudTreeEl) cloudTreeEl.innerHTML = spinnerHtml;
+  if (localTreeEl) localTreeEl.innerHTML = spinnerHtml;
 
   // Guarantee preloads are finished
   await window.preloadDriveBackground();
@@ -487,12 +639,14 @@ _registerDriveSSEHandlers();
 window.toggleSelection = async function(checkboxEl) {
   const isSelected = checkboxEl.checked;
   const isDir = checkboxEl.getAttribute("data-isdir") === "true";
+  const source = checkboxEl.getAttribute("data-source") || "cloud";
 
-  // Collect ONLY actual file IDs (never directories)
-  let idsToUpdate = [];
+  // Collect file IDs and folder IDs separately
+  let fileIdsToUpdate = [];
+  let folderIdsToUpdate = [];
 
   if (!isDir) {
-    idsToUpdate.push(checkboxEl.getAttribute("data-id"));
+    fileIdsToUpdate.push(checkboxEl.getAttribute("data-id"));
   }
 
   if (isDir) {
@@ -512,22 +666,40 @@ window.toggleSelection = async function(checkboxEl) {
         cb.checked = isSelected;
         cb.indeterminate = false;
         if (cb.getAttribute("data-isdir") !== "true") {
-          idsToUpdate.push(cb.getAttribute("data-id"));
+          fileIdsToUpdate.push(cb.getAttribute("data-id"));
         }
       });
+    }
+
+    // If this folder has un-expanded cloud children (lazy), send folder_id to backend
+    // so backend can recursively collect all files inside it
+    if (source === "cloud") {
+      const detailsTag = checkboxEl.closest('.tree-details');
+      if (detailsTag) {
+        const lazyChildren = detailsTag.querySelectorAll('[data-cloud-lazy]');
+        lazyChildren.forEach(lazyDet => {
+          const lazyId = lazyDet.getAttribute('data-cloud-lazy');
+          if (lazyId) folderIdsToUpdate.push(`cloud__${lazyId}`);
+        });
+        // If the clicked folder itself hasn't been expanded, send it too
+        if (detailsTag.dataset.cloudLazy) {
+          folderIdsToUpdate.push(checkboxEl.getAttribute("data-id"));
+        }
+      }
     }
   }
 
   // Propagate upward: update ALL parent folder checkboxes
   _propagateUp(checkboxEl);
 
-  if (idsToUpdate.length === 0) return;
+  if (fileIdsToUpdate.length === 0 && folderIdsToUpdate.length === 0) return;
 
   // Update local cache
+  const allIds = [...fileIdsToUpdate, ...folderIdsToUpdate];
   if (isSelected) {
-    _selections.disabled = _selections.disabled.filter(id => !idsToUpdate.includes(id));
+    _selections.disabled = _selections.disabled.filter(id => !allIds.includes(id));
   } else {
-    idsToUpdate.forEach(id => {
+    allIds.forEach(id => {
       if (!_selections.disabled.includes(id)) _selections.disabled.push(id);
     });
   }
@@ -540,7 +712,7 @@ window.toggleSelection = async function(checkboxEl) {
         "Content-Type": "application/json",
         "X-CSRFToken": getCsrfToken()
       },
-      body: JSON.stringify({ file_ids: idsToUpdate, is_selected: isSelected })
+      body: JSON.stringify({ file_ids: fileIdsToUpdate, folder_ids: folderIdsToUpdate, is_selected: isSelected })
     });
     // Dashboard stats will be updated automatically via SSE broadcast from the backend
   } catch(e) {

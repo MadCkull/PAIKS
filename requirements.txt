@@ -17,6 +17,9 @@ qdrant-client
 python-docx
 PyMuPDF
 pypdf
+openpyxl
+xlrd
+python-pptx
 
 # Production server features
 whitenoise

@@ -714,3 +714,39 @@ def generate_summary(request):
         "file_name": file_name,
         "summary": summary,
     })
+def wipe_db(request):
+    """
+    Forcefully wipes the whole vector database (Qdrant) and resets tracking metrics.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    
+    try:
+        from api.models import DocumentTrack, SyncJob
+        from api.services.rag.indexer import get_qdrant_client, CLOUD_COLLECTION, LOCAL_COLLECTION
+        
+        client = get_qdrant_client()
+        
+        # 1. Delete Qdrant collections
+        if client.collection_exists(CLOUD_COLLECTION):
+            client.delete_collection(CLOUD_COLLECTION)
+        if client.collection_exists(LOCAL_COLLECTION):
+            client.delete_collection(LOCAL_COLLECTION)
+            
+        # 2. Re-create empty collections (handled automatically by get_vector_store, but we'll force it here)
+        # Actually, let's just leave it to the next ingest to create them.
+        
+        # 3. Clear database models
+        DocumentTrack.objects.all().delete()
+        SyncJob.objects.all().delete()
+        
+        # 4. Refresh stats for UI
+        try:
+            refresh_local_stats()
+        except Exception:
+            pass
+            
+        return JsonResponse({"status": "wiped", "message": "Vector database and tracking history wiped successfully"})
+    except Exception as e:
+        logger.error(f"Failed to wipe vector DB: {e}")
+        return JsonResponse({"error": str(e)}, status=500)
