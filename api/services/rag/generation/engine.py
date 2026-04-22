@@ -11,9 +11,6 @@ logger = logging.getLogger(__name__)
 
 
 def get_llm() -> Ollama:
-    """Instantiate the local LLM using LlamaIndex Ollama integration.
-    Temperature=0 ensures deterministic, focused factual responses.
-    """
     cfg = load_llm_config()
     model = cfg.get("model", "llama3.2")
     base_url = cfg.get("base_url", "http://localhost:11434")
@@ -24,6 +21,10 @@ def get_llm() -> Ollama:
         base_url=base_url,
         request_timeout=120.0,
         temperature=0.0,
+        context_window=4096,           # ADD
+        additional_kwargs={
+            "num_ctx": 4096            # ADD — tells Ollama server directly
+        }
     )
 
 

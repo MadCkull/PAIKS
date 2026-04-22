@@ -53,6 +53,9 @@ def _enrich_node_metadata(nodes: list) -> list:
             
             # Use detected heading, or inherit from previous chunk
             node.metadata["section_header"] = last_heading
+            
+            # Mark point as enabled by default for retrieval
+            node.metadata["enabled"] = 1
     
     return nodes
 

@@ -44,6 +44,7 @@ urlpatterns = [
     path("chat/sessions",       chat_history.list_sessions),
     path("chat/sessions/new",   chat_history.create_session),
     path("chat/clear-all",      chat_history.clear_all_history),
+    
     path("chat/sessions/<str:session_id>/messages", chat_history.get_session_messages),
     path("chat/sessions/<str:session_id>/delete", chat_history.delete_session),
 ]

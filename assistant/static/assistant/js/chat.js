@@ -3,21 +3,8 @@ function formatAnswer(text) {
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
   
-  // Minimal numeric citation mapping  -  supports [Source: file → section] and [Source: file]
-  const citations = [];
-  html = html.replace(/\[Source:\s*([^\]→]+?)(?:\s*→\s*([^\]]+?))?\]/g, (match, p1, p2) => {
-    const filename = p1.trim();
-    const section = p2 ? p2.trim() : '';
-    const displayKey = section ? `${filename} → ${section}` : filename;
-    let index = citations.indexOf(displayKey);
-    if (index === -1) {
-        citations.push(displayKey);
-        index = citations.length - 1;
-    }
-    const displayNum = index + 1;
-    const tooltip = escapeHtml(displayKey);
-    return `<sup class="citation-minimal" onclick="window.openSourcesFromCitation('${escapeHtml(filename)}')" title="${tooltip}">${displayNum}</sup>`;
-  });
+  // Strip any stray [Source: ...] tags the LLM may still emit (legacy cleanup)
+  html = html.replace(/\[Source:\s*[^\]]+?\]/g, '');
 
   html = html.replace(/(?:^|<br>)[-•]\s+(.+?)(?=<br>|$)/g, '<li>$1</li>');
   if (html.includes('<li>')) {

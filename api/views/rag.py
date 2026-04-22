@@ -17,7 +17,7 @@ from api.services.rag.ingestion.chunking import chunk_documents
 from api.services.rag.ingestion.pipeline import ingest_nodes_to_collection
 from api.services.rag.retrieval.hybrid import get_base_retriever
 from api.services.rag.retrieval.reranker import get_cross_encoder_reranker
-from api.services.rag.generation.engine import build_query_engine
+from api.services.rag.generation.engine import build_query_engine, should_use_rag
 from api.services.rag.ingestion.embedder import get_embedder
 
 from llama_index.core import VectorStoreIndex, QueryBundle
@@ -334,9 +334,15 @@ def search(request):
             # Filter garbage chunks so the LLM isn't confused by irrelevant context
             filtered_nodes = [n for n in nodes if n.score is None or n.score >= 0.05]
             
-            # If all chunks were garbage, LlamaIndex natively short-circuits and refuses to call the LLM, returning "Empty Response".
-            # We inject a dummy empty node with score=0.0 to force LlamaIndex to query the LLM using just the history block! 
-            # The score=0.0 ensures it gets cleanly excluded from the frontend hits below.
+            # Similarity gate: if the best reranked score is below the relevance
+            # threshold, the retrieved context is noise — discard it so the LLM
+            # answers from general knowledge / conversation history instead.
+            if not should_use_rag(filtered_nodes, threshold=0.30):
+                logger.info("Similarity gate: context below threshold, clearing nodes")
+                filtered_nodes = []
+            
+            # If no relevant nodes survived, inject a dummy empty node so
+            # LlamaIndex still calls the LLM (it refuses on an empty list).
             if not filtered_nodes:
                 from llama_index.core.schema import NodeWithScore, TextNode
                 dummy_node = TextNode(text="")
@@ -479,6 +485,11 @@ def _file_specific_query(query, llm_query, file_match, client, embedder, cloud_e
     
     # Filter garbage chunks to prevent conversational hallucinations
     filtered_nodes = [n for n in nodes if n.score is None or n.score >= 0.05]
+    
+    # Similarity gate: discard context if best score is below threshold
+    if not should_use_rag(filtered_nodes, threshold=0.30):
+        logger.info("Similarity gate (file-specific): context below threshold, clearing nodes")
+        filtered_nodes = []
     
     if not filtered_nodes:
         from llama_index.core.schema import NodeWithScore, TextNode

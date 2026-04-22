@@ -39,7 +39,7 @@ function _isDir(node) {
 }
 
 function _isFileChecked(fileId) {
-  return !_selections.disabled.includes(fileId);
+  return _selections.selected.includes(fileId);
 }
 
 function _hasError(fileId) {
@@ -497,6 +497,7 @@ let _eventSource = null;
 window.openLogConsole = async function() {
     const con = document.getElementById("drive-log-console");
     if(con) {
+        if (!con.classList.contains("hidden")) return; // Prevent overwriting live SSE logs if already open
         con.classList.remove("hidden");
         try {
             const res = await fetchWithTimeout(`${API_BASE}/system/logs`, {}, 5000);
@@ -698,10 +699,14 @@ window.toggleSelection = async function(checkboxEl) {
   const allIds = [...fileIdsToUpdate, ...folderIdsToUpdate];
   if (isSelected) {
     _selections.disabled = _selections.disabled.filter(id => !allIds.includes(id));
+    allIds.forEach(id => {
+      if (!_selections.selected.includes(id)) _selections.selected.push(id);
+    });
   } else {
     allIds.forEach(id => {
       if (!_selections.disabled.includes(id)) _selections.disabled.push(id);
     });
+    _selections.selected = _selections.selected.filter(id => !allIds.includes(id));
   }
 
   try {
