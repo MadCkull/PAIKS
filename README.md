@@ -59,7 +59,7 @@ PAIKS/
 │   ├── local_files/       # Uploaded document repository
 │   └── *.json             # User preferences and encrypted tokens
 ├── launcher.py            # Unified system launcher
-└── run.bat                # Windows quick-start script
+└── Launch-PAIKS.bat       # Windows quick-start script
 ```
 
 ---
@@ -99,7 +99,7 @@ PAIKS/
 4. **Launch the Application:**
    ```powershell
    # Use the unified launcher
-   .\run.bat
+   .\Launch-PAIKS.bat
    ```
    *The application will automatically verify dependencies, initialize the database (if needed), clean up stale processes, and start the system at `http://localhost:8000`.*
 

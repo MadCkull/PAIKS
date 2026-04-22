@@ -20,6 +20,12 @@ pypdf
 openpyxl
 xlrd
 python-pptx
+pandas
 
 # Production server features
 whitenoise
+
+# Utilities
+watchdog
+rich
+pytest
