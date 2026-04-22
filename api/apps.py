@@ -9,7 +9,7 @@ class ApiConfig(AppConfig):
         if 'runserver' in sys.argv and os.environ.get('RUN_MAIN') != 'true':
             return
             
-        if 'makemigrations' in sys.argv or 'migrate' in sys.argv or 'test' in sys.argv:
+        if 'makemigrations' in sys.argv or 'migrate' in sys.argv or 'test' in sys.argv or 'pytest' in sys.modules:
             return
             
         from api.services.sync_manager import start_sync_engine

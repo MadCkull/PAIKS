@@ -1,6 +1,5 @@
 <div align="center">
-  <img src="https://img.shields.io/badge/PAIKS-Personal%20AI%20Knowledge%20System-6B46C1?style=for-the-badge" alt="PAIKS" />
-  <h1>🚀 PAIKS Setup & Execution Guide</h1>
+  <h1>PAIKS Setup & Execution Guide</h1>
   <p><strong>The ultimate guide to configuring and running your completely private AI knowledge base.</strong></p>
 
   <img src="https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows Support" />
@@ -12,7 +11,7 @@
 
 <div style="background: rgba(107, 70, 193, 0.1); border: 2px solid #6B46C1; border-radius: 15px; padding: 20px; margin-bottom: 20px; text-align: center;">
   <h3 style="margin-top: 0; color: #6B46C1;">✨ Fully Automated Setup</h3>
-  <p>The PAIKS unified launcher (<code>Launch-PAIKS.bat</code>) <strong>handles absolutely everything for you</strong>! It automatically creates the isolated virtual environment (<code>.venv</code>), and installs all required Python packages. You just need to run the launcher, sit back, and watch it do the work!</p>
+  <p>The PAIKS unified launcher (<code>Launch-PAIKS.bat</code>) <strong>handles absolutely everything for you</strong>! It automatically creates the isolated virtual environment (<code>.venv</code>), installs dependencies, and <b>configures the database migrations</b>. You just need to run the launcher, sit back, and watch it do the work!</p>
 </div>
 
 ---
@@ -49,8 +48,6 @@ git clone https://github.com/MadCkull/PAIKS.git
 cd PAIKS
 ```
 
-_(The launcher will automatically create the virtual environment for you in Step 3!)_
-
 ---
 
 ## ⚙️ Step 2: Environment Configuration
@@ -78,7 +75,7 @@ If you plan to use Google Drive synchronization, you need to provide your Google
 
 ### 🌟 Method A: The Unified Launcher (Recommended)
 
-The PAIKS system includes a smart, unified launcher that creates your environment, manages the database, cleans up stale background tasks, and **automatically installs all missing dependencies**!
+The PAIKS system includes a smart, unified launcher that creates your environment, manages database migrations, collects static files, cleans up stale background tasks, and **automatically installs all missing dependencies**!
 
 Simply run:
 
@@ -88,17 +85,26 @@ Simply run:
 
 _(Alternatively: `python launcher.py`)_
 
-The smart launcher will pop up dashboard in your terminal, start the server, and give you live status updates!
+The smart launcher will pop up a dashboard in your terminal, prepare the database, start the server, and give you live status updates!
 
 ### 🔧 Method B: Manual Startup (For Developers)
 
-If you prefer running the raw Django server yourself without the rich dashboard and auto-installer:
+If you prefer running the raw Django server yourself:
 
 ```powershell
-# 1. Install dependencies manually
+# 1. Create and activate virtual environment
+python -m venv .venv
+.venv\Scripts\activate
+
+# 2. Install dependencies
 pip install -r requirements.txt
 
-# 2. Run the Django development server
+# 3. Apply Database Migrations & Static Files (CRITICAL)
+python manage.py migrate
+python manage.py migrate --database=chats
+python manage.py collectstatic --noinput
+
+# 4. Run the Django development server
 python manage.py runserver
 ```
 

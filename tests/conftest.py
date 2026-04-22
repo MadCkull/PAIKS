@@ -79,21 +79,18 @@ def clean_event_bus():
     yield
     with _lock:
         _clients.clear()
-
-
-# ── Index Queue Cleanup ────────────────────────────────────────
-@pytest.fixture(autouse=True)
-def clear_index_queue():
-    """Clear the global _index_queue before each test."""
-    from api.services.sync_manager import _index_queue
-    while not _index_queue.empty():
-        try:
-            _index_queue.get_nowait()
-        except queue.Empty:
-            break
-    yield
-    while not _index_queue.empty():
-        try:
-            _index_queue.get_nowait()
-        except queue.Empty:
-            break
+# ── Document Track Factory ─────────────────────────────────────
+@pytest.fixture
+def doc_track_factory(db):
+    """Factory fixture to quickly insert a DocumentTrack row for testing."""
+    def _create(**kwargs):
+        from api.models import DocumentTrack
+        defaults = {
+            "file_id": "test__file.txt",
+            "name": "test_file.txt",
+            "source": "local",
+            "sync_status": "pending",
+        }
+        defaults.update(kwargs)
+        return DocumentTrack.objects.create(**defaults)
+    return _create

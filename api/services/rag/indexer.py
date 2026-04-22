@@ -37,5 +37,5 @@ def get_vector_store(collection_name: str) -> QdrantVectorStore:
     return QdrantVectorStore(
         collection_name=collection_name, 
         client=client, 
-        enable_hybrid=True
+        enable_hybrid=False
     )

@@ -165,7 +165,7 @@ class TestLocalFileHandler:
     @patch("api.services.sync_manager._debounce_timers", {})
     @patch("api.services.sync_manager.DEBOUNCE_SECONDS", 0)
     def test_handle_change_creates_doc_and_queues(self, tmp_path, doc_track_factory):
-        from api.services.sync_manager import LocalFileHandler, _index_queue
+        from api.services.sync_manager import LocalFileHandler
         handler = LocalFileHandler()
 
         f = tmp_path / "newfile.txt"
@@ -182,7 +182,7 @@ class TestLocalFileHandler:
     @patch("api.services.sync_manager._debounce_timers", {})
     def test_handle_change_deselected_file_does_not_queue(self, tmp_path):
         """Changing a deselected file must NOT set status to pending or queue it."""
-        from api.services.sync_manager import LocalFileHandler, _index_queue
+        from api.services.sync_manager import LocalFileHandler
         from api.models import DocumentTrack
 
         f = tmp_path / "deselected.txt"
@@ -202,7 +202,7 @@ class TestLocalFileHandler:
         assert doc.sync_status == "disabled"
 
     def test_handle_deleted_marks_disabled(self, tmp_path):
-        from api.services.sync_manager import LocalFileHandler, _index_queue
+        from api.services.sync_manager import LocalFileHandler
         from api.models import DocumentTrack
 
         filepath = str(tmp_path / "todelete.txt")
@@ -218,10 +218,10 @@ class TestLocalFileHandler:
         doc = DocumentTrack.objects.get(file_id=f"local__{filepath}")
         assert doc.sync_status == "disabled"
 
-        # Should also queue a delete action
-        job = _index_queue.get_nowait()
-        assert job["action"] == "delete"
-        assert job["file_id"] == f"local__{filepath}"
+        from api.models import SyncJob
+        job = SyncJob.objects.filter(action="delete").first()
+        assert job is not None
+        assert job.document.file_id == f"local__{filepath}"
 
     def test_unsupported_extension_ignored(self, tmp_path):
         from api.services.sync_manager import LocalFileHandler
@@ -277,51 +277,7 @@ class TestLocalFileHandler:
 
 # ── Worker Stale Job Detection Tests ────────────────────────────
 
-@pytest.mark.django_db
-class TestStaleJobDetection:
-    """Tests that the worker skips stale jobs when file content has changed."""
 
-    def test_stale_hash_skips_job(self, doc_track_factory):
-        """If expected_hash doesn't match current doc hash, job must be skipped."""
-        from api.services.sync_manager import _index_queue
-
-        doc = doc_track_factory(
-            file_id="local__D:\\test\\stale.txt",
-            sync_status="pending",
-            content_hash="new_hash_after_edit"
-        )
-
-        _index_queue.put({
-            "action": "index",
-            "doc_id": doc.id,
-            "expected_hash": "old_hash_before_edit"
-        })
-
-        job = _index_queue.get_nowait()
-        assert job["expected_hash"] != doc.content_hash
-
-    def test_deselected_doc_skips_job(self, doc_track_factory):
-        """If user deselected while job was queued, worker must skip."""
-        doc = doc_track_factory(
-            file_id="local__D:\\test\\deselected.txt",
-            sync_status="pending",
-            is_selected=False
-        )
-        assert not doc.is_selected
-
-    def test_matching_hash_allows_job(self, doc_track_factory):
-        """If expected_hash matches, the job should proceed."""
-        doc = doc_track_factory(
-            file_id="local__D:\\test\\current.txt",
-            sync_status="pending",
-            content_hash="correct_hash"
-        )
-        job = {
-            "action": "index",
-            "doc_id": doc.id,
-            "expected_hash": "correct_hash"
-        }
-        assert job["expected_hash"] == doc.content_hash
 
 
 # ── Directory Filtering Tests ───────────────────────────────────

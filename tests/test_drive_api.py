@@ -45,9 +45,8 @@ def doc_factory(db):
 class TestSelectionEndpoint:
     """Tests POST /api/drive/selection — the core file selection toggle."""
 
-    @patch("api.services.sync_manager._index_queue")
     @patch("api.services.sync_manager._compute_and_broadcast_health")
-    def test_select_file_creates_doc_and_queues(self, mock_health, mock_q, rf):
+    def test_select_file_creates_doc_and_queues(self, mock_health, rf):
         from api.views.drive import selection
 
         body = json.dumps({
@@ -57,19 +56,19 @@ class TestSelectionEndpoint:
         req = rf.post("/api/drive/selection", data=body, content_type="application/json")
         resp = selection(req)
 
-        assert resp.status_code == 200
+        assert resp.status_code == 200, resp.content
         data = json.loads(resp.content)
         assert data["status"] == "updated"
         assert data["count"] == 1
 
-        from api.models import DocumentTrack
+        from api.models import DocumentTrack, SyncJob
         doc = DocumentTrack.objects.get(file_id="local__D:\\test\\file.txt")
         assert doc.is_selected is True
         assert doc.sync_status == "pending"
+        assert SyncJob.objects.filter(document=doc, action="index").exists()
 
-    @patch("api.services.sync_manager._index_queue")
     @patch("api.services.sync_manager._compute_and_broadcast_health")
-    def test_deselect_file_marks_disabled(self, mock_health, mock_q, rf, doc_factory):
+    def test_deselect_file_marks_disabled(self, mock_health, rf, doc_factory):
         from api.views.drive import selection
 
         doc_factory("local__D:\\test\\a.txt", sync_status="synced")
@@ -81,16 +80,16 @@ class TestSelectionEndpoint:
         req = rf.post("/api/drive/selection", data=body, content_type="application/json")
         resp = selection(req)
 
-        assert resp.status_code == 200
+        assert resp.status_code == 200, resp.content
 
-        from api.models import DocumentTrack
+        from api.models import DocumentTrack, SyncJob
         doc = DocumentTrack.objects.get(file_id="local__D:\\test\\a.txt")
         assert doc.is_selected is False
         assert doc.sync_status == "disabled"
+        assert SyncJob.objects.filter(document=doc, action="delete").exists()
 
-    @patch("api.services.sync_manager._index_queue")
     @patch("api.services.sync_manager._compute_and_broadcast_health")
-    def test_deselect_triggers_health_broadcast(self, mock_health, mock_q, rf, doc_factory):
+    def test_deselect_triggers_health_broadcast(self, mock_health, rf, doc_factory):
         from api.views.drive import selection
 
         doc_factory("local__x.txt")
@@ -101,9 +100,8 @@ class TestSelectionEndpoint:
 
         mock_health.assert_called_once()
 
-    @patch("api.services.sync_manager._index_queue")
     @patch("api.services.sync_manager._compute_and_broadcast_health")
-    def test_select_triggers_index_queue(self, mock_health, mock_q, rf):
+    def test_select_triggers_index_queue(self, mock_health, rf):
         from api.views.drive import selection
 
         body = json.dumps({
@@ -113,13 +111,11 @@ class TestSelectionEndpoint:
         req = rf.post("/api/drive/selection", data=body, content_type="application/json")
         selection(req)
 
-        mock_q.put.assert_called_once()
-        call_args = mock_q.put.call_args[0][0]
-        assert call_args["action"] == "index"
+        from api.models import SyncJob
+        assert SyncJob.objects.filter(action="index").exists()
 
-    @patch("api.services.sync_manager._index_queue")
     @patch("api.services.sync_manager._compute_and_broadcast_health")
-    def test_deselect_triggers_delete_queue(self, mock_health, mock_q, rf, doc_factory):
+    def test_deselect_triggers_delete_queue(self, mock_health, rf, doc_factory):
         from api.views.drive import selection
 
         doc_factory("local__D:\\data\\old.txt")
@@ -131,14 +127,11 @@ class TestSelectionEndpoint:
         req = rf.post("/api/drive/selection", data=body, content_type="application/json")
         selection(req)
 
-        mock_q.put.assert_called_once()
-        call_args = mock_q.put.call_args[0][0]
-        assert call_args["action"] == "delete"
-        assert call_args["file_id"] == "local__D:\\data\\old.txt"
+        from api.models import SyncJob
+        assert SyncJob.objects.filter(document__file_id="local__D:\\data\\old.txt", action="delete").exists()
 
-    @patch("api.services.sync_manager._index_queue")
     @patch("api.services.sync_manager._compute_and_broadcast_health")
-    def test_bulk_selection(self, mock_health, mock_q, rf):
+    def test_bulk_selection(self, mock_health, rf):
         """Selecting multiple files in one request must process all."""
         from api.views.drive import selection
 
@@ -151,7 +144,8 @@ class TestSelectionEndpoint:
 
         data = json.loads(resp.content)
         assert data["count"] == 3
-        assert mock_q.put.call_count == 3
+        from api.models import SyncJob
+        assert SyncJob.objects.count() == 3
 
     def test_invalid_json_returns_400(self, rf):
         from api.views.drive import selection
@@ -160,9 +154,8 @@ class TestSelectionEndpoint:
         resp = selection(req)
         assert resp.status_code == 400
 
-    @patch("api.services.sync_manager._index_queue")
     @patch("api.services.sync_manager._compute_and_broadcast_health")
-    def test_reselect_errored_file_resets_to_pending(self, mock_health, mock_q, rf, doc_factory):
+    def test_reselect_errored_file_resets_to_pending(self, mock_health, rf, doc_factory):
         """Re-selecting a file that previously errored must reset its status."""
         from api.views.drive import selection
 
@@ -177,9 +170,8 @@ class TestSelectionEndpoint:
         assert doc.sync_status == "pending"
         assert doc.is_selected is True
 
-    @patch("api.services.sync_manager._index_queue")
     @patch("api.services.sync_manager._compute_and_broadcast_health")
-    def test_cloud_file_detection(self, mock_health, mock_q, rf):
+    def test_cloud_file_detection(self, mock_health, rf):
         """Cloud file IDs must be detected and stored with source='cloud'."""
         from api.views.drive import selection
 

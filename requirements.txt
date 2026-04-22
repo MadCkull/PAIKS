@@ -11,6 +11,7 @@ llama-index-vector-stores-qdrant
 llama-index-embeddings-ollama
 llama-index-llms-ollama
 llama-index-postprocessor-sbert-rerank
+sentence-transformers
 qdrant-client
 
 # Document parsing
@@ -28,4 +29,5 @@ whitenoise
 # Utilities
 watchdog
 rich
-pytest
+pytest-django
+pytest-mock
