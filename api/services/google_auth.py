@@ -29,23 +29,16 @@ def get_creds():
     if creds and creds.valid:
         return creds
 
-    # Token expired  -  try refresh with a short timeout
+    # Token expired  -  try refresh
     if creds and creds.expired and creds.refresh_token:
         try:
             from google.auth.transport.requests import Request
-            import socket
-            old_timeout = socket.getdefaulttimeout()
-            socket.setdefaulttimeout(5)  # 5 second max  -  don't hang offline
-            try:
-                creds.refresh(Request())
-                TOKEN_PATH.write_text(creds.to_json())
-                return creds
-            finally:
-                socket.setdefaulttimeout(old_timeout)
+            # We skip the global socket timeout as it causes race conditions on Windows/Django
+            creds.refresh(Request())
+            TOKEN_PATH.write_text(creds.to_json())
+            return creds
         except Exception as e:
             logger.warning("Token refresh failed (offline?): %s", e)
-            # Return the expired creds anyway so we know the user WAS authenticated
-            # The caller can check creds.valid / creds.expired
             return None
 
     return None

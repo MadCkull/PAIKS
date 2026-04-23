@@ -422,7 +422,7 @@
   background: var(--glass-bg);
   border: 1px solid var(--border-dim);
   border-radius: var(--radius-lg);
-  overflow: hidden;
+  overflow: visible;
   position: relative;
   transition: border-color 0.2s, box-shadow 0.2s;
   display: flex;
@@ -1295,9 +1295,15 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
+  max-height: 500px; /* Large enough to fit content */
+  overflow: hidden;
+  transition: max-height 0.3s ease, opacity 0.3s ease, padding 0.3s ease;
 }
 .mec-body-disabled {
-  opacity: 0.45;
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
   pointer-events: none;
   filter: grayscale(0.3);
 }
@@ -1315,6 +1321,8 @@
   border: 1px solid var(--border-dim);
   border-radius: var(--radius-md);
   transition: border-color 0.2s;
+  position: relative; /* For absolute confirmation popover */
+  overflow: visible; /* Allow popover to stay within bounds if needed, but not clip */
 }
 .danger-row:hover {
   border-color: rgba(239, 68, 68, 0.2);
@@ -1374,22 +1382,34 @@
   box-shadow: 0 0 10px var(--amber-glow);
 }
 
-/* inline confirm expand */
+/* absolute confirm popover */
 .confirm-expand {
-  max-height: 0;
-  overflow: hidden;
-  transition: max-height 0.3s var(--ease);
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%) scale(0.95);
+  background: var(--bg-card);
+  border: 1px solid var(--color-error);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  z-index: 10;
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  min-width: 280px;
 }
 .confirm-expand.open {
-  max-height: 60px;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(-50%) scale(1);
 }
 .confirm-inner {
-  padding: 10px 18px;
+  padding: 12px 16px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  background: rgba(239, 68, 68, 0.06);
-  border-top: 1px solid rgba(239, 68, 68, 0.1);
+  gap: 12px;
 }
 .confirm-inner p {
   font-size: 0.78rem;
@@ -1398,6 +1418,100 @@
 }
 .btn-confirm-yes {
   padding: 5px 12px;
+  background: var(--color-error);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-confirm-no {
+  padding: 5px 12px;
+  background: var(--glass-bg);
+  color: var(--text-dim);
+  border: 1px solid var(--border-dim);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* ── Folder Change Warning Popover ── */
+.picker-warning-popover {
+  position: absolute;
+  top: 60px; /* Positioned below the folder row */
+  right: 18px;
+  width: 320px;
+  background: var(--bg-card);
+  border: 1px solid var(--amber);
+  border-radius: 12px;
+  box-shadow: 0 15px 45px rgba(0,0,0,0.7);
+  z-index: 999; /* Ensure it stays above EVERYTHING in the card */
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform-origin: top right;
+}
+.picker-warning-popover.hidden {
+  opacity: 0;
+  visibility: hidden;
+  transform: scale(0.9) translateY(-10px);
+  pointer-events: none;
+}
+.pwp-inner {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.pwp-icon {
+  font-size: 1.4rem;
+  color: var(--amber);
+  margin-bottom: 2px;
+}
+.pwp-text {
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+.pwp-text strong {
+  color: var(--text-primary);
+  display: block;
+  margin-bottom: 4px;
+}
+.pwp-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+.btn-pwp-cancel {
+  padding: 6px 14px;
+  background: var(--glass-bg);
+  border: 1px solid var(--border-dim);
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+.btn-pwp-confirm {
+  padding: 6px 14px;
+  background: var(--amber);
+  border: none;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #000;
+}
+.btn-pwp-confirm:hover {
+  background: var(--amber-light);
+  box-shadow: 0 0 15px var(--amber-glow);
+}
+
+/* Disabled state for sc-change-btn */
+.sc-change-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  filter: grayscale(1);
   background: var(--red);
   color: #fff;
   border-radius: 6px;
@@ -1646,4 +1760,183 @@
   text-transform: uppercase;
   color: var(--text-dim);
   margin-bottom: 6px;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   FOLDER PICKER — Redesigned UI
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Back button */
+.picker-nav-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  border: 1px solid var(--border-dim);
+  background: var(--glass-bg);
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.picker-nav-btn:hover {
+  color: var(--text-primary);
+  background: var(--glass-bg-hover);
+  border-color: var(--glass-border-light);
+}
+
+/* Close button */
+.picker-close-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.picker-close-btn:hover {
+  color: var(--color-error);
+  background: rgba(239,68,68,0.08);
+  border-color: rgba(239,68,68,0.15);
+}
+
+/* Save button (compact) */
+.picker-save-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 16px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-light));
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  font-family: var(--font);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 8px var(--accent-glow);
+}
+.picker-save-btn:hover:not(:disabled) {
+  box-shadow: 0 4px 16px var(--accent-glow);
+  transform: translateY(-1px);
+}
+.picker-save-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Picker list items */
+.picker-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.12s;
+  border: 1px solid transparent;
+  user-select: none;
+}
+.picker-item:hover {
+  background: var(--glass-bg-hover);
+}
+.picker-item.picker-selected {
+  background: var(--accent-bg);
+  border-color: var(--accent-glow);
+}
+.picker-item-icon {
+  font-size: 1.15rem;
+  flex-shrink: 0;
+  width: 24px;
+  text-align: center;
+}
+.picker-item-name {
+  flex: 1;
+  font-size: 0.86rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.picker-item-meta {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+.picker-item-chevron {
+  color: var(--text-dim);
+  font-size: 0.65rem;
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+
+/* Root entry point cards (My Drive / Shared / Drives) */
+.picker-root-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  margin: 4px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid var(--border-dim);
+  background: var(--glass-bg);
+}
+.picker-root-card:hover {
+  background: var(--glass-bg-hover);
+  border-color: var(--glass-border-light);
+}
+.picker-root-card.picker-selected {
+  background: var(--accent-bg);
+  border-color: var(--accent-glow);
+}
+.picker-root-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+.picker-root-icon.drive-icon {
+  background: var(--cloud-bg);
+  color: var(--cloud);
+  border: 1px solid rgba(96,165,250,0.2);
+}
+.picker-root-icon.shared-icon {
+  background: var(--green-bg);
+  color: var(--green-light);
+  border: 1px solid rgba(16,185,129,0.2);
+}
+.picker-root-icon.local-icon {
+  background: var(--amber-bg);
+  color: var(--amber);
+  border: 1px solid rgba(245,158,11,0.2);
+}
+.picker-root-name {
+  flex: 1;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.picker-root-sub {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  margin-top: 1px;
 }

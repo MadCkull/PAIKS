@@ -21,21 +21,32 @@ def folders(request):
         return JsonResponse({"error": "Not authenticated"}, status=401)
 
     parent_id = request.GET.get("parent_id", None)
+    
+    if not parent_id:
+        current = load_folder_config()
+        return JsonResponse({
+            "folders": [
+                {"id": "root", "name": "My Drive", "type": "root"},
+                {"id": "shared", "name": "Shared with me", "type": "shared"}
+            ],
+            "current_folder": current,
+            "parent_id": None
+        })
 
     try:
         service = drive_service(creds)
         folders_list = []
         page_token = None
 
-        # If a parent_id is given, list only its direct children folders
-        base_q = "mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-        if parent_id:
-            base_q += f" and '{parent_id}' in parents"
+        if parent_id == "shared":
+            base_q = "sharedWithMe = true and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+        else:
+            base_q = f"'{parent_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
 
         while True:
             params = {
                 "pageSize": 100,
-                "fields": "nextPageToken, files(id, name, modifiedTime)",
+                "fields": "nextPageToken, files(id, name, mimeType)",
                 "q": base_q,
                 "orderBy": "name",
             }
@@ -82,10 +93,48 @@ def set_folder(request):
 def folder_config(request):
     return JsonResponse(load_folder_config() or {})
 
+def _fetch_drive_files_recursive(service, parent_id, collected_files=None, depth=0, max_depth=3):
+    if collected_files is None:
+        collected_files = []
+    if depth > max_depth:
+        return collected_files
+
+    page_token = None
+    if parent_id == "shared":
+        base_q = f"sharedWithMe = true and trashed = false and ({MIME_FILTER} or mimeType = 'application/vnd.google-apps.folder')"
+    else:
+        base_q = f"'{parent_id}' in parents and trashed = false and ({MIME_FILTER} or mimeType = 'application/vnd.google-apps.folder')"
+
+    try:
+        while True:
+            results = service.files().list(
+                pageSize=100,
+                fields="nextPageToken, files(id, name, mimeType)",
+                q=base_q,
+            ).execute()
+            
+            for f in results.get("files", []):
+                if f.get("mimeType") == "application/vnd.google-apps.folder":
+                    _fetch_drive_files_recursive(service, f.get("id"), collected_files, depth + 1, max_depth)
+                else:
+                    collected_files.append({
+                        "id": f"cloud__{f['id']}",
+                        "name": f.get("name")
+                    })
+            
+            page_token = results.get("nextPageToken")
+            if not page_token:
+                break
+    except Exception as e:
+        logger.error(f"Recursive drive fetch error: {e}")
+        
+    return collected_files
+
 def selection(request):
     try:
         payload = json.loads(request.body)
-        file_ids = payload.get("file_ids", [])
+        file_ids = payload.get("file_ids", []) # explicit file IDs
+        folder_ids = payload.get("folder_ids", []) # explicit folder IDs
         is_selected = payload.get("is_selected", True)
         
         from django.db import transaction
@@ -93,6 +142,25 @@ def selection(request):
         from api.services.sync_manager import _compute_and_broadcast_health
         from api.services.sync_manager import logger as sync_logger
         
+        creds = get_creds()
+        service = drive_service(creds) if creds else None
+        
+        # Expand Google Drive folders recursively
+        expanded_files = []
+        if service and folder_ids:
+            for fid in folder_ids:
+                if fid.startswith("cloud__"):
+                    raw_id = fid.replace("cloud__", "", 1)
+                    found = _fetch_drive_files_recursive(service, raw_id)
+                    expanded_files.extend(found)
+                # Note: local folder expansion could be added here if needed
+
+        # Prepare all files to process
+        all_targets = []
+        for fid in file_ids:
+            all_targets.append({"id": fid, "name": None})
+        all_targets.extend(expanded_files)
+
         # Build a fast mapping for Cloud File names
         cloud_name_map = {}
         try:
@@ -106,20 +174,23 @@ def selection(request):
 
         processed = 0
         with transaction.atomic():
-            for fid in file_ids:
+            for target in all_targets:
+                fid = target["id"]
+                target_name = target.get("name")
                 
                 # Determine correct fallback name based on source
-                if fid.startswith("cloud__"):
-                    default_name = cloud_name_map.get(fid, fid.replace("cloud__", "", 1))
-                else:
-                    import os
-                    path_part = fid.replace("local__", "", 1)
-                    default_name = os.path.basename(path_part) if path_part else fid
+                if not target_name:
+                    if fid.startswith("cloud__"):
+                        target_name = cloud_name_map.get(fid, fid.replace("cloud__", "", 1))
+                    else:
+                        import os
+                        path_part = fid.replace("local__", "", 1)
+                        target_name = os.path.basename(path_part) if path_part else fid
 
                 doc, created = DocumentTrack.objects.get_or_create(
                     file_id=fid,
                     defaults={
-                        "name": default_name,
+                        "name": target_name,
                         "source": "cloud" if fid.startswith("cloud__") else "local",
                         "sync_status": "pending" if is_selected else "disabled",
                         "is_selected": is_selected
@@ -127,8 +198,8 @@ def selection(request):
                 )
                 if not created:
                     # Heal random alphanumeric names from previous bugs dynamically
-                    if doc.name != default_name and doc.source == "cloud" and not doc.name.endswith(('.txt', '.csv', '.doc', '.docx', '.pdf')):
-                        doc.name = default_name
+                    if doc.name != target_name and doc.source == "cloud" and not doc.name.endswith(('.txt', '.csv', '.doc', '.docx', '.pdf')):
+                        doc.name = target_name
 
                     doc.is_selected = is_selected
                     if is_selected and doc.sync_status in ['disabled', 'error', 'pending']:
@@ -185,15 +256,24 @@ def files(request):
 
     try:
         page_token = request.GET.get("pageToken")
-        page_size = int(request.GET.get("pageSize", 20))
+        page_size = int(request.GET.get("pageSize", 100))
         name_query = request.GET.get("q", "")
+        parent_id = request.GET.get("parent_id")
 
         folder_cfg = load_folder_config()
         service = drive_service(creds)
 
-        conditions = ["trashed = false", MIME_FILTER]
-        if folder_cfg and folder_cfg.get("folder_id"):
-            conditions.append(f"'{folder_cfg['folder_id']}' in parents")
+        target_parent = parent_id
+        if not target_parent:
+            target_parent = folder_cfg.get("folder_id") if folder_cfg else "root"
+
+        conditions = ["trashed = false", f"({MIME_FILTER} or mimeType = 'application/vnd.google-apps.folder')"]
+        
+        if target_parent == "shared":
+            conditions.append("sharedWithMe = true")
+        elif target_parent:
+            conditions.append(f"'{target_parent}' in parents")
+            
         if name_query:
             escaped = name_query.replace("'", "\\'")
             conditions.append(f"name contains '{escaped}'")
@@ -201,7 +281,7 @@ def files(request):
         params = {
             "pageSize": page_size,
             "fields": "nextPageToken, files(id, name, mimeType, modifiedTime, size, iconLink, webViewLink, thumbnailLink)",
-            "orderBy": "modifiedTime desc",
+            "orderBy": "folder, name",
             "q": " and ".join(conditions),
         }
         if page_token:

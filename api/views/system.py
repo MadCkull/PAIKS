@@ -107,3 +107,41 @@ def logs(request):
             return JsonResponse({"error": str(e)}, status=500)
             
     return JsonResponse({"error": "Method not allowed"}, status=405)
+def clear_app_cache(request):
+    """
+    EXTREME cleanup: Wipes all file caches, mirror files, and Django internal cache.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+    
+    try:
+        from django.core.cache import cache
+        from django.conf import settings
+        import shutil
+        
+        # 1. Clear Django internal cache
+        cache.clear()
+        
+        # 2. Wipe STORAGE_DIR / cache
+        storage_cache = settings.STORAGE_DIR / "cache"
+        if storage_cache.exists():
+            for item in storage_cache.iterdir():
+                try:
+                    if item.is_dir():
+                        shutil.rmtree(item)
+                    else:
+                        item.unlink()
+                except Exception:
+                    continue
+        
+        # Ensure mirror directory exists for future syncs
+        (storage_cache / "mirrors").mkdir(parents=True, exist_ok=True)
+        
+        # 3. (Optional) Wipe logs if they are too big
+        log_file = settings.BASE_DIR / "logs" / "paiks.log"
+        if log_file.exists():
+             with open(log_file, "w") as f: f.write("")
+
+        return JsonResponse({"status": "cleared", "message": "All backend caches wiped successfully"})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)

@@ -81,3 +81,14 @@ def delete_session(request, session_id):
         return JsonResponse({'status': 'deleted'})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+        
+def clear_all_history(request):
+    """POST /api/chat/clear-all - Deletes all chat sessions and messages"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+        
+    try:
+        ChatSession.objects.all().delete()
+        return JsonResponse({'status': 'cleared'})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)

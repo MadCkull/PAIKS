@@ -152,9 +152,23 @@
                   <i class="fas fa-folder"></i>
                   <span class="sc-folder-text empty" id="path-drive-text">No root folder selected</span>
                 </div>
-                <button class="sc-change-btn" id="btn-cloud-action" onclick="openUniversalPicker('drive')">
+                <button class="sc-change-btn" id="btn-cloud-action" onclick="promptChangeFolder('drive')">
                   <i class="fas fa-pen-to-square"></i> Change Folder
                 </button>
+              </div>
+
+              <!-- Folder Change Warning Popover (Hidden) -->
+              <div class="picker-warning-popover hidden" id="popover-warning-drive">
+                <div class="pwp-inner">
+                  <div class="pwp-icon"><i class="fas fa-triangle-exclamation"></i></div>
+                  <div class="pwp-text">
+                    <strong>Warning:</strong> Changing this folder will remove all indexed data for the current selection.
+                  </div>
+                  <div class="pwp-actions">
+                    <button class="btn-pwp-cancel" onclick="closeFolderPrompt('drive')">Cancel</button>
+                    <button class="btn-pwp-confirm" onclick="openUniversalPicker('drive')">Continue</button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -195,9 +209,23 @@
                   <i class="fas fa-folder-open"></i>
                   <span class="sc-folder-text empty" id="settings-local-folder">No folder selected</span>
                 </div>
-                <button class="sc-change-btn" onclick="openUniversalPicker('local')">
+                <button class="sc-change-btn" id="btn-local-browse" onclick="promptChangeFolder('local')">
                   <i class="fas fa-pen-to-square"></i> Browse Folder
                 </button>
+              </div>
+
+              <!-- Folder Change Warning Popover (Hidden) -->
+              <div class="picker-warning-popover hidden" id="popover-warning-local">
+                <div class="pwp-inner">
+                  <div class="pwp-icon"><i class="fas fa-triangle-exclamation"></i></div>
+                  <div class="pwp-text">
+                    <strong>Warning:</strong> Changing this folder will remove all indexed data for the current selection.
+                  </div>
+                  <div class="pwp-actions">
+                    <button class="btn-pwp-cancel" onclick="closeFolderPrompt('local')">Cancel</button>
+                    <button class="btn-pwp-confirm" onclick="openUniversalPicker('local')">Continue</button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -385,12 +413,6 @@
               <input type="password" class="form-input" id="cloud-llm-key"
                 placeholder="Paste your API key…" oninput="settingsTriggerAutosave()" autocomplete="off"/>
             </div>
-            <div class="form-group">
-              <label class="form-label">Model <span>· depends on provider</span></label>
-              <input type="text" class="form-input" id="cloud-llm-model"
-                placeholder="e.g. gemini-1.5-pro, gpt-4o, claude-3-5-sonnet"
-                oninput="settingsTriggerAutosave()"/>
-            </div>
           </div>
         </div>
 
@@ -445,25 +467,21 @@
         </div>
 
 
-        <div class="section-label">
+        <div class="section-label" style="margin-top:12px;">
           <i class="fas fa-trash-can" style="font-size:.65rem;opacity:.7"></i>
           Danger Zone
         </div>
 
-        <div class="section-label">
-          <i class="fas fa-trash-can" style="font-size:.65rem;opacity:.7"></i>
-          Danger Zone
-        </div>
 
-        <!-- Clear Mirror Cache -->
+        <!-- Clear App Cache -->
         <div class="danger-row">
           <div class="danger-row-text">
-            <h4>Clear Mirror Cache</h4>
-            <p>Delete the local file mirror cache. Files will be re-fetched on next sync.</p>
+            <h4>Clear App Cache</h4>
+            <p>Forcefully wipe all backend caches, mirror files, and browser data. System will reload for a fresh slate.</p>
           </div>
           <div>
             <button class="btn-warn" onclick="settingsToggleConfirm('mirror')">
-              <i class="fas fa-broom"></i> Clear Cache
+              <i class="fas fa-broom"></i> Wipe Cache
             </button>
             <div class="confirm-expand" id="confirm-mirror">
               <div class="confirm-inner">
@@ -479,7 +497,7 @@
         <div class="danger-row">
           <div class="danger-row-text">
             <h4>Clear Chat History</h4>
-            <p>Permanently delete all saved conversation sessions from this browser.</p>
+            <p>Delete all chat sessions and messages across all devices. This action is irreversible.</p>
           </div>
           <div>
             <button class="btn-warn" onclick="settingsToggleConfirm('chat')">
@@ -499,7 +517,7 @@
         <div class="danger-row">
           <div class="danger-row-text">
             <h4>Wipe Vector Database</h4>
-            <p>Remove all indexed embeddings. Your original files are NOT deleted. Re-indexing required.</p>
+            <p>Destroy all indexed data and resets tracking metrics. You will need to re-index all files.</p>
           </div>
           <div>
             <button class="btn-danger" onclick="settingsToggleConfirm('db')">
@@ -535,22 +553,36 @@
 
 <!-- ── UNIVERSAL FOLDER PICKER (Local + Cloud) ────────────────────── -->
 <div id="local-picker-overlay" class="overlay hidden" style="z-index:10001;">
-  <div class="modal modal-md">
-    <div class="modal-header">
-      <h3 id="picker-modal-title">📁 Select Root Folder</h3>
-      <button class="btn-close btn-icon" onclick="closeModal('local-picker-overlay')">✕</button>
+  <div class="modal modal-md" style="max-width:520px;">
+
+    <!-- Header: Back + Title + Close -->
+    <div class="modal-header" style="padding:14px 18px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--glass-border);flex-shrink:0;">
+      <button class="picker-nav-btn" id="picker-back-btn" onclick="pickerGoBack()" title="Go back" style="display:none;">
+        <i class="fas fa-arrow-left"></i>
+      </button>
+      <h3 id="picker-modal-title" style="flex:1;font-size:1rem;font-weight:600;margin:0;color:var(--text-primary);">📁 Select Root Folder</h3>
+      <button class="picker-close-btn" onclick="closeModal('local-picker-overlay')" title="Close">
+        <i class="fas fa-xmark"></i>
+      </button>
     </div>
+
+    <!-- Breadcrumb -->
+    <div id="picker-breadcrumb" style="padding:9px 18px;background:rgba(255,255,255,0.025);border-bottom:1px solid var(--border-dim);font-size:0.78rem;color:var(--text-dim);font-family:var(--mono);display:flex;align-items:center;gap:4px;min-height:34px;overflow-x:auto;white-space:nowrap;">
+      This PC
+    </div>
+
+    <!-- List -->
     <div class="modal-body" style="padding:0;">
-      <div id="picker-breadcrumb" style="padding:12px 20px;background:rgba(255,255,255,0.03);border-bottom:1px solid var(--glass-border);font-size:0.85rem;color:var(--text-dim);font-family:monospace;">
-        This PC
-      </div>
-      <div id="picker-list" style="height:400px;overflow-y:auto;padding:10px;">
+      <div id="picker-list" style="height:380px;overflow-y:auto;padding:8px;">
         <!-- Items injected by JS -->
       </div>
     </div>
-    <div class="modal-footer" style="padding:16px 20px;border-top:1px solid var(--glass-border);display:flex;justify-content:flex-end;gap:12px;">
-      <button class="btn btn-outline btn-sm" onclick="closeModal('local-picker-overlay')">Cancel</button>
-      <button class="btn btn-primary btn-sm" id="btn-confirm-picker" disabled onclick="confirmUniversalPicker()">Select Folder</button>
+
+    <!-- Footer: Save button (small, right-aligned) -->
+    <div style="padding:10px 18px;border-top:1px solid var(--border-dim);display:flex;align-items:center;justify-content:flex-end;">
+      <button class="picker-save-btn" id="btn-confirm-picker" disabled onclick="confirmUniversalPicker()">
+        <i class="fas fa-check" style="font-size:0.7rem;"></i> Save
+      </button>
     </div>
   </div>
 </div>

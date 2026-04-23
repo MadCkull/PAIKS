@@ -15,7 +15,7 @@ LOCAL_FILES_PATH = STORAGE_DIR / "cache" / "mirrors"
 LOCAL_FILES_CACHE = STORAGE_DIR / "cache" / "local_files_cache.json"
 LOCAL_STATS_CACHE = STORAGE_DIR / "cache" / "local_stats_cache.json"
 
-LOCAL_ALLOWED_EXTENSIONS = {".pdf", ".docx", ".doc", ".txt", ".md", ".csv"}
+LOCAL_ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".csv", ".xlsx", ".xls", ".pptx"}
 
 LOCAL_FILES_PATH.mkdir(exist_ok=True, parents=True)
 

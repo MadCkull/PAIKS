@@ -99,27 +99,108 @@ window.settingsToggleConfirm = function(id) {
   const el = document.getElementById("confirm-" + id);
   if (el) el.classList.toggle("open");
 };
-window.settingsExecClear = function(id) {
-  settingsToggleConfirm(id);
-  const labels = { mirror: "Mirror cache cleared", app: "App cache cleared", db: "Vector database wiped", chat: "Chat history deleted" };
-  showToast(labels[id] || "Done", "success");
-  if (id === "chat") { try { localStorage.removeItem("paiks-sessions"); renderHistoryList && renderHistoryList(); } catch(_) {} }
+window.settingsExecClear = async function(id) {
+  const labels = { 
+    mirror: "App cache wiped & reloading...", 
+    chat: "Chat history deleted", 
+    db: "Vector database wiped" 
+  };
+  
+  const endpoints = {
+    mirror: "/system/clear-cache",
+    chat: "/chat/clear-all",
+    db: "/rag/wipe-db"
+  };
+
+  try {
+    const res = await fetch(`${API_BASE}${endpoints[id]}`, {
+      method: "POST",
+      headers: { "X-CSRFToken": getCsrfToken() }
+    });
+    const data = await res.json();
+    
+    if (data.error) throw new Error(data.error);
+
+    showToast(labels[id] || "Done", "success");
+    
+    // UI specific post-cleanup
+    if (id === "chat") {
+      try {
+        localStorage.removeItem("paiks-sessions");
+        if (typeof renderHistoryList === "function") renderHistoryList();
+      } catch(_) {}
+    }
+
+    if (id === "mirror") {
+      // Powerful browser reset
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+        // Clear CacheStorage if browser supports it
+        if ('caches' in window) {
+          const names = await caches.keys();
+          await Promise.all(names.map(name => caches.delete(name)));
+        }
+      } catch(_) {}
+      
+      // Reload for fresh start
+      setTimeout(() => window.location.reload(), 1500);
+    }
+    
+    if (id === "db") {
+       // Update dashboard metrics if possible
+       if (typeof window.updateSettingsModal === "function") updateSettingsModal();
+    }
+
+    settingsToggleConfirm(id); // close prompt
+  } catch (err) {
+    showToast(`Cleanup failed: ${err.message}`, "error");
+  }
 };
 
 /* ── Universal Folder Picker ─────────────────────────────────── */
+let _pickerNavStack = []; // navigation history for back button
+let _driveChildrenCache = {}; // { parentId: [folder objects] } — avoids re-fetching
+
 window.openUniversalPicker = function(source) {
   _pickerSource = source;
   _pickerSelectedPath = null;
+  _pickerNavStack = [];
+  _driveChildrenCache = {};
+  
+  // Hide popover if open
+  closeFolderPrompt(source === "drive" ? "drive" : "local");
+
   const overlay = document.getElementById("local-picker-overlay");
   const title   = document.getElementById("picker-modal-title");
   const confirm = document.getElementById("btn-confirm-picker");
+  const backBtn = document.getElementById("picker-back-btn");
   if (title) title.textContent = source === "drive" ? "☁ Select Google Drive Folder" : "📁 Select Local Root Folder";
   if (confirm) confirm.disabled = true;
+  if (backBtn) backBtn.style.display = "none";
   if (overlay) overlay.classList.remove("hidden");
   if (source === "drive") {
-    _loadDriveFolders(null);
+    _loadDriveFolders(null); // show root entry points
   } else {
+    _pickerNavStack = [];
     browseLocalPath("This PC");
+  }
+};
+
+window.pickerGoBack = function() {
+  if (_pickerSource === "drive") {
+    if (_pickerNavStack.length > 0) {
+      _pickerNavStack.pop(); // remove current
+      const prev = _pickerNavStack.length > 0 ? _pickerNavStack[_pickerNavStack.length - 1] : null;
+      _loadDriveFolders(prev ? prev.id : null, true); // true = skip push
+    }
+  } else {
+    // Local: go up by trimming path
+    if (_pickerNavStack.length > 0) {
+      _pickerNavStack.pop();
+      const prev = _pickerNavStack.length > 0 ? _pickerNavStack[_pickerNavStack.length - 1] : "This PC";
+      browseLocalPath(typeof prev === "string" ? prev : prev.path || "This PC", true);
+    }
   }
 };
 
@@ -159,34 +240,117 @@ window.confirmUniversalPicker = function() {
 };
 
 
-async function _loadDriveFolders(parentId) {
+async function _loadDriveFolders(parentId, isBack = false) {
   const listEl = document.getElementById("picker-list");
   const crumb  = document.getElementById("picker-breadcrumb");
-  if (listEl) listEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-dim);"><i class="fas fa-spinner fa-spin"></i> Loading…</div>';
+  const backBtn = document.getElementById("picker-back-btn");
+
+  if (listEl) listEl.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-dim);"><i class="fas fa-spinner fa-spin"></i> Loading…</div>';
+  
+  // Deselect on navigation
+  _pickerSelectedPath = null;
+  const confirmBtn = document.getElementById("btn-confirm-picker");
+  if (confirmBtn) confirmBtn.disabled = true;
+
+  // Update nav stack
+  if (!isBack && parentId !== null) {
+    // Don't push if we're going back
+    const crumbName = _pickerNavStack.length > 0 ? parentId : parentId;
+    // We'll update the name after fetch
+  }
+
+  // Check frontend cache first
+  if (parentId && _driveChildrenCache[parentId]) {
+    _renderDriveFolders(_driveChildrenCache[parentId], parentId, isBack);
+    return;
+  }
+
   try {
     const url = parentId ? `${API_BASE}/drive/folders?parent_id=${encodeURIComponent(parentId)}` : `${API_BASE}/drive/folders`;
-    const res = await fetchWithTimeout(url, {}, 6000);
+    const res = await fetchWithTimeout(url, {}, 8000);
     const data = await res.json();
     const folders = data.folders || [];
-    if (crumb) crumb.textContent = parentId ? `Drive / ${parentId}` : "My Drive";
-    if (listEl) {
-      if (!folders.length) { listEl.innerHTML = '<div style="padding:20px;color:var(--text-dim);">No sub-folders found.</div>'; return; }
-      listEl.innerHTML = folders.map(f => `
-        <div class="picker-item" data-drive-id="${f.id}" data-drive-name="${escapeHtml(f.name)}" onclick="_selectDriveFolder('${f.id}','${escapeHtml(f.name)}')" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;cursor:pointer;transition:background .15s;" onmouseover="this.style.background='var(--glass-bg-hover)'" onmouseout="this.style.background=''"><i class='fas fa-folder' style='color:var(--cloud);'></i><span style='font-family:var(--mono);font-size:.84rem;'>${escapeHtml(f.name)}</span></div>`
-      ).join("");
-    }
+    
+    // Cache the result
+    if (parentId) _driveChildrenCache[parentId] = folders;
+    
+    _renderDriveFolders(folders, parentId, isBack);
+    
   } catch(e) {
-    if (listEl) listEl.innerHTML = '<div style="padding:20px;color:var(--color-error);"><i class="fas fa-triangle-exclamation"></i> Could not load Drive folders — check authentication.</div>';
+    if (listEl) listEl.innerHTML = '<div style="padding:24px;color:var(--color-error);text-align:center;"><i class="fas fa-triangle-exclamation"></i> Could not load Drive folders — check authentication.</div>';
   }
 }
 
-window._selectDriveFolder = function(id, name) {
+function _renderDriveFolders(folders, parentId, isBack) {
+  const listEl = document.getElementById("picker-list");
+  const crumb  = document.getElementById("picker-breadcrumb");
+  const backBtn = document.getElementById("picker-back-btn");
+  
+  // Build breadcrumb trail
+  if (backBtn) backBtn.style.display = _pickerNavStack.length > 0 ? "" : "none";
+  
+  if (!parentId) {
+    // Show root entry points (like drives in local picker)
+    if (crumb) crumb.textContent = "Google Drive";
+    if (backBtn) backBtn.style.display = "none";
+    
+    if (!listEl) return;
+    listEl.innerHTML = folders.map(f => {
+      const isShared = f.type === "shared" || f.id === "shared";
+      const iconClass = isShared ? "shared-icon" : "drive-icon";
+      const iconChar = isShared ? '<i class="fas fa-share-nodes"></i>' : '<i class="fab fa-google-drive"></i>';
+      const sub = isShared ? "Files shared by others" : "Your personal files";
+      return `
+        <div class="picker-root-card" data-drive-id="${f.id}" data-drive-name="${escapeHtml(f.name)}"
+             onclick="_pickerSelectDriveItem('${f.id}','${escapeHtml(f.name)}')"
+             ondblclick="_pickerOpenDriveFolder('${f.id}','${escapeHtml(f.name)}')">
+          <div class="picker-root-icon ${iconClass}">${iconChar}</div>
+          <div style="flex:1;">
+            <div class="picker-root-name">${escapeHtml(f.name)}</div>
+            <div class="picker-root-sub">${sub}</div>
+          </div>
+          <span class="picker-item-chevron"><i class="fas fa-chevron-right"></i></span>
+        </div>`;
+    }).join("");
+    return;
+  }
+  
+  // Update breadcrumb
+  const crumbParts = _pickerNavStack.map(s => s.name);
+  if (crumb) crumb.textContent = crumbParts.join(" / ") || "Google Drive";
+  
+  if (!listEl) return;
+  
+  if (!folders.length) {
+    listEl.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-dim);font-size:0.85rem;"><i class="fas fa-folder-open" style="font-size:1.5rem;margin-bottom:8px;display:block;opacity:0.4;"></i>No sub-folders found</div>';
+    return;
+  }
+  
+  listEl.innerHTML = folders.map(f => `
+    <div class="picker-item" data-drive-id="${f.id}" data-drive-name="${escapeHtml(f.name)}"
+         onclick="_pickerSelectDriveItem('${f.id}','${escapeHtml(f.name)}')"
+         ondblclick="_pickerOpenDriveFolder('${f.id}','${escapeHtml(f.name)}')">
+      <span class="picker-item-icon">📁</span>
+      <span class="picker-item-name">${escapeHtml(f.name)}</span>
+      <span class="picker-item-chevron"><i class="fas fa-chevron-right"></i></span>
+    </div>`
+  ).join("");
+}
+
+// Single click = select folder
+window._pickerSelectDriveItem = function(id, name) {
   _pickerSelectedPath = { id, name };
-  document.querySelectorAll(".picker-item").forEach(el => el.style.background = "");
+  document.querySelectorAll(".picker-item, .picker-root-card").forEach(el => el.classList.remove("picker-selected"));
   const el = document.querySelector(`[data-drive-id="${id}"]`);
-  if (el) el.style.background = "var(--accent-bg)";
+  if (el) el.classList.add("picker-selected");
   const confirm = document.getElementById("btn-confirm-picker");
   if (confirm) confirm.disabled = false;
+};
+
+// Double click = navigate into folder
+window._pickerOpenDriveFolder = function(id, name) {
+  _pickerNavStack.push({ id, name });
+  _loadDriveFolders(id);
 };
 
 /* ── Cloud LLM toggle (show/hide API fields) ─────────────────── */
@@ -196,7 +360,6 @@ window.onCloudLLMToggle = function(enabled) {
   if (body) {
     if (enabled) {
       body.classList.remove("mec-body-disabled");
-      body.style.display = "";
     } else {
       body.classList.add("mec-body-disabled");
     }
@@ -245,130 +408,140 @@ function _syncSliderLabel(id, value, suffix="") {
 
 window.updateSettingsModal = async function() {
   _isInitializingSettings = true;
-  const cloudConnectedState = { connected: false, user: null };
-  const statsState = {};
-  let settings = {};
-  const llmState = {};
-
-  // 1. Fetch State
   try {
-    const res = await fetchWithTimeout(`${API_BASE}/auth/status`, {}, 3000);
-    const data = await res.json();
-    cloudConnectedState.connected = !!data.authenticated;
-    cloudConnectedState.user = data.user;
-  } catch(_) {}
+    const settings = window.appSettings || {};
 
-  try {
-    const res = await fetchWithTimeout(`${API_BASE}/drive/stats`, {}, 3000);
-    Object.assign(statsState, await res.json());
-  } catch(_) {}
+    const gen = settings.general || {};
+    const src = settings.sources || {};
+    const rag = settings.rag     || {};
+    const mod = settings.models  || {};
+    const dat = settings.data    || {};
 
-  settings = window.appSettings || {};
+    // 1. TAB: General
+    if (gen.accent_color) setAccentColor(gen.accent_color, null, true);
+    if (gen.system_prompt !== undefined) {
+      const sp = document.getElementById("system-prompt");
+      if (sp) { sp.value = gen.system_prompt; if (window.updateCharCount) updateCharCount(sp); }
+    }
+    _syncSliderLabel("ctx-slider", gen.context_memory_limit || 6, " msgs");
 
-  try {
-    const res = await fetchWithTimeout(`${API_BASE}/rag/llm/status`, {}, 3000);
-    Object.assign(llmState, await res.json());
-  } catch(_) {}
+    // 2. TAB: Sources (Baseline DOM Population)
+    const toggleCloud    = document.getElementById("toggle-cloud");
+    const pathDriveText  = document.getElementById("path-drive-text");
+    const dotDrive       = document.getElementById("dot-drive");
+    const labelDrive     = document.getElementById("label-drive");
+    const cardDrive      = document.getElementById("sc-drive");
+    const btnCloudAction = document.getElementById("btn-cloud-action");
+    const driveFileCount = document.getElementById("drive-file-count");
+    
+    const toggleLocal    = document.getElementById("toggle-local");
+    const pathLocalText  = document.getElementById("settings-local-folder");
+    const dotLocal       = document.getElementById("dot-local");
+    const labelLocal     = document.getElementById("label-local");
+    const cardLocal      = document.getElementById("sc-local");
+    const localFileCount = document.getElementById("local-file-count");
 
-  const cloudConnected = cloudConnectedState.connected;
-  const gen = settings.general || {};
-  const src = settings.sources || {};
-  const rag = settings.rag     || {};
-  const mod = settings.models  || {};
-  const dat = settings.data    || {};
+    if (toggleCloud) toggleCloud.checked = !!src.cloud_enabled;
+    if (toggleLocal) toggleLocal.checked = !!src.local_enabled;
+    
+    const localRoot = src.local_root_path;
+    if (pathLocalText) { pathLocalText.textContent = localRoot || "No folder selected"; pathLocalText.classList.toggle("empty", !localRoot); }
+    
+    if (localRoot) {
+      if (dotLocal)   dotLocal.className   = "sc-status-dot connected";
+      if (labelLocal) labelLocal.textContent = "Connected";
+      if (cardLocal)  cardLocal.classList.add("active-green");
+    } else {
+      if (dotLocal)   dotLocal.className   = "sc-status-dot disabled";
+      if (labelLocal) labelLocal.textContent = "Not configured";
+      if (cardLocal)  cardLocal.classList.remove("active-green");
+    }
 
-  // 2. TAB: General
-  if (gen.accent_color) setAccentColor(gen.accent_color);
-  if (gen.system_prompt !== undefined) {
-    const sp = document.getElementById("system-prompt");
-    if (sp) { sp.value = gen.system_prompt; if (window.updateCharCount) updateCharCount(sp); }
+    // Disable picker buttons if source is off
+    if (btnCloudAction) btnCloudAction.disabled = !src.cloud_enabled;
+    if (document.getElementById("btn-local-browse")) document.getElementById("btn-local-browse").disabled = !src.local_enabled;
+
+    // Async Hydration for Statuses/Stats
+    (async () => {
+      try {
+        const res = await fetchWithTimeout(`${API_BASE}/auth/status`, {}, 3000);
+        const data = await res.json();
+        
+        // Fetch stats for both cloud and local
+        const dStats = await fetchWithTimeout(`${API_BASE}/drive/stats`, {}, 3000).then(r=>r.json()).catch(()=>({}));
+        
+        if (data.authenticated) {
+          const folder = dStats.folder?.name || dStats.folder?.folder_name || src.drive_folder_name || null;
+          if (pathDriveText) { pathDriveText.textContent = folder || "Root (All Files)"; pathDriveText.classList.remove("empty"); }
+          if (dotDrive)    dotDrive.className    = "sc-status-dot connected";
+          if (labelDrive)  labelDrive.textContent = "Connected";
+          if (cardDrive)   cardDrive.classList.add("active-cloud");
+          if (driveFileCount && dStats.cloud_total !== undefined) driveFileCount.textContent = dStats.cloud_total;
+          if (btnCloudAction) { 
+            btnCloudAction.innerHTML = '<i class="fas fa-pen-to-square"></i> Change Folder'; 
+            btnCloudAction.onclick = () => promptChangeFolder('drive'); 
+          }
+        } else {
+          if (pathDriveText) { pathDriveText.textContent = "Not connected"; pathDriveText.classList.add("empty"); }
+          if (dotDrive)    dotDrive.className    = "sc-status-dot disabled";
+          if (labelDrive)  labelDrive.textContent = "Not connected";
+          if (btnCloudAction) { 
+            btnCloudAction.innerHTML = '<i class="fas fa-plug"></i> Connect Drive'; 
+            btnCloudAction.onclick = () => connectDrive(); 
+          }
+        }
+
+        // Update local stats from the same stats response
+        if (localFileCount && dStats.local_total !== undefined) {
+          localFileCount.textContent = dStats.local_total;
+        }
+
+        // Hydrate LLM Status
+        const llmRes = await fetchWithTimeout(`${API_BASE}/rag/llm/status`, {}, 3000);
+        const llmState = await llmRes.json();
+        const settingsActiveModel = document.getElementById("settings-active-model");
+        if (settingsActiveModel && llmState.current_model) settingsActiveModel.value = llmState.current_model;
+        const settingsLlmDot = document.getElementById("settings-llm-dot");
+        if (settingsLlmDot) settingsLlmDot.className = "status-dot " + (llmState.reachable ? "green" : "gray");
+        if (typeof loadLLMStatus === "function") loadLLMStatus();
+
+      } catch(_) {}
+    })();
+
+    // 4. TAB: RAG
+    _syncSliderLabel("chunk-size", rag.chunk_size || 512);
+    _syncSliderLabel("chunk-overlap", rag.chunk_overlap || 64);
+    _syncSliderLabel("topk", rag.top_k || 30);
+    _syncSliderLabel("topn", rag.top_n || 5);
+    if (window.updateChunkPreview) updateChunkPreview();
+    
+    const rr = document.getElementById("rerank-toggle");
+    if (rr) rr.checked = !!rag.rerank_enabled;
+    const as = document.getElementById("auto-summarise-toggle");
+    if (as) as.checked = !!rag.auto_summarise;
+
+    // 5. TAB: Models
+    const tcl = document.getElementById("toggle-cloud-llm");
+    if (tcl) tcl.checked = !!mod.cloud_llm_enabled;
+    if (typeof onCloudLLMToggle === "function") onCloudLLMToggle(!!mod.cloud_llm_enabled);
+
+    const cp = document.getElementById("cloud-llm-provider");
+    if (cp) cp.value = mod.cloud_provider || "Google Gemini";
+    const ck = document.getElementById("cloud-llm-key");
+    if (ck) ck.value = mod.cloud_key || "";
+    const cm = document.getElementById("cloud-llm-model");
+    if (cm) cm.value = mod.cloud_model || "gemini-1.5-pro";
+    const em = document.getElementById("embed-model-select");
+    if (em) em.value = mod.embed_model || "nomic-embed-text";
+
+    // 6. TAB: Data
+    const si = document.getElementById("sync-interval-select");
+    if (si) si.value = dat.sync_interval || "30";
+
+    if (typeof onProviderChange === "function") onProviderChange();
+  } finally {
+    _isInitializingSettings = false;
   }
-  _syncSliderLabel("ctx-slider", gen.context_memory_limit || 6, " msgs");
-
-  // 3. TAB: Sources
-  const toggleCloud    = document.getElementById("toggle-cloud");
-  const pathDriveText  = document.getElementById("path-drive-text");
-  const dotDrive       = document.getElementById("dot-drive");
-  const labelDrive     = document.getElementById("label-drive");
-  const cardDrive      = document.getElementById("sc-drive");
-  const btnCloudAction = document.getElementById("btn-cloud-action");
-  const driveFileCount = document.getElementById("drive-file-count");
-
-  if (toggleCloud) toggleCloud.checked = !!src.cloud_enabled;
-  
-  if (cloudConnected) {
-    const folder = statsState.folder?.name || statsState.folder?.folder_name || src.drive_folder_name || null;
-    if (pathDriveText) { pathDriveText.textContent = folder || "Root (All Files)"; pathDriveText.classList.remove("empty"); }
-    if (dotDrive)    dotDrive.className    = "sc-status-dot connected";
-    if (labelDrive)  labelDrive.textContent = "Connected";
-    if (cardDrive)   cardDrive.classList.add("active-cloud");
-    if (driveFileCount && statsState.cloud_total) driveFileCount.textContent = statsState.cloud_total;
-    if (btnCloudAction) { btnCloudAction.innerHTML = '<i class="fas fa-pen-to-square"></i> Change Folder'; btnCloudAction.onclick = () => openUniversalPicker('drive'); }
-  } else {
-    if (pathDriveText) { pathDriveText.textContent = "Not connected"; pathDriveText.classList.add("empty"); }
-    if (dotDrive)    dotDrive.className    = "sc-status-dot disabled";
-    if (labelDrive)  labelDrive.textContent = "Not connected";
-    if (btnCloudAction) { btnCloudAction.innerHTML = '<i class="fas fa-plug"></i> Connect Drive'; btnCloudAction.onclick = () => connectDrive(); }
-  }
-
-  const toggleLocal    = document.getElementById("toggle-local");
-  const pathLocalText  = document.getElementById("settings-local-folder");
-  const dotLocal       = document.getElementById("dot-local");
-  const labelLocal     = document.getElementById("label-local");
-  const cardLocal      = document.getElementById("sc-local");
-  const localFileCount = document.getElementById("local-file-count");
-
-  if (toggleLocal) toggleLocal.checked = !!src.local_enabled;
-  const localRoot = src.local_root_path;
-  if (pathLocalText) { pathLocalText.textContent = localRoot || "No folder selected"; pathLocalText.classList.toggle("empty", !localRoot); }
-  if (localRoot) {
-    if (dotLocal)   dotLocal.className   = "sc-status-dot connected";
-    if (labelLocal) labelLocal.textContent = "Connected";
-    if (cardLocal)  cardLocal.classList.add("active-green");
-    if (localFileCount && statsState.local_total) localFileCount.textContent = statsState.local_total;
-  } else {
-    if (dotLocal)   dotLocal.className   = "sc-status-dot disabled";
-    if (labelLocal) labelLocal.textContent = "Not configured";
-    if (cardLocal)  cardLocal.classList.remove("active-green");
-  }
-
-  // 4. TAB: RAG
-  _syncSliderLabel("chunk-size", rag.chunk_size || 512);
-  _syncSliderLabel("chunk-overlap", rag.chunk_overlap || 64);
-  _syncSliderLabel("topk", rag.top_k || 30);
-  _syncSliderLabel("topn", rag.top_n || 5);
-  if (window.updateChunkPreview) updateChunkPreview();
-  
-  const rr = document.getElementById("rerank-toggle");
-  if (rr) rr.checked = !!rag.rerank_enabled;
-  const as = document.getElementById("auto-summarise-toggle");
-  if (as) as.checked = !!rag.auto_summarise;
-
-  // 5. TAB: Models
-  const tcl = document.getElementById("toggle-cloud-llm");
-  if (tcl) tcl.checked = !!mod.cloud_llm_enabled;
-  if (typeof onCloudLLMToggle === "function") onCloudLLMToggle(!!mod.cloud_llm_enabled);
-
-  const cp = document.getElementById("cloud-llm-provider");
-  if (cp) cp.value = mod.cloud_provider || "Google Gemini";
-  const ck = document.getElementById("cloud-llm-key");
-  if (ck) ck.value = mod.cloud_key || "";
-  const cm = document.getElementById("cloud-llm-model");
-  if (cm) cm.value = mod.cloud_model || "gemini-1.5-pro";
-  const em = document.getElementById("embed-model-select");
-  if (em) em.value = mod.embed_model || "nomic-embed-text";
-
-  const settingsActiveModel = document.getElementById("settings-active-model");
-  if (settingsActiveModel && llmState.current_model) settingsActiveModel.value = llmState.current_model;
-  const settingsLlmDot = document.getElementById("settings-llm-dot");
-  if (settingsLlmDot) settingsLlmDot.className = "status-dot " + (llmState.reachable ? "green" : "gray");
-
-  // 6. TAB: Data
-  const si = document.getElementById("sync-interval-select");
-  if (si) si.value = dat.sync_interval || "30";
-
-  if (typeof onProviderChange === "function") onProviderChange();
-  _isInitializingSettings = false;
 };
 
 window.toggleSource = async function(type, enabled) {
@@ -393,6 +566,11 @@ window.toggleSource = async function(type, enabled) {
 
   const card = document.getElementById(`card-${type}`);
   if (card) card.classList.toggle("disabled", !enabled);
+
+  // Sync button disabled state
+  const btn = type === 'cloud' ? document.getElementById("btn-cloud-action") : document.getElementById("btn-local-browse");
+  if (btn) btn.disabled = !enabled;
+  if (!enabled) closeFolderPrompt(type === 'cloud' ? 'drive' : 'local');
 
   try {
     const res = await fetch(`${API_BASE}/system/settings`, {
@@ -467,33 +645,48 @@ window.logoutPaiks = function() {
   window.location.href = "/login/";
 };
 
-// ── LOCAL FOLDER PICKER LOGIC ────────────────────────────────
+// ── Folder Change Prompts ────────────────────────────────────
+window.promptChangeFolder = function(type) {
+  const popover = document.getElementById(`popover-warning-${type}`);
+  if (popover) {
+    // Close others first
+    document.querySelectorAll(".picker-warning-popover").forEach(p => p.classList.add("hidden"));
+    popover.classList.remove("hidden");
+  }
+};
 
-window.openLocalFolderPicker = function() {
-  const overlay = document.getElementById("local-picker-overlay");
-  if (!overlay) return;
-  overlay.classList.remove("hidden");
+window.closeFolderPrompt = function(type) {
+  const popover = document.getElementById(`popover-warning-${type}`);
+  if (popover) popover.classList.add("hidden");
+};
+
+window.browseLocalPath = async function(path, isBack = false) {
+  const listEl = document.getElementById("picker-list");
+  const breadcrumbEl = document.getElementById("picker-breadcrumb");
+  const backBtn = document.getElementById("picker-back-btn");
+  if (!listEl) return;
+
+  listEl.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-dim);"><i class="fas fa-spinner fa-spin"></i> Loading…</div>';
+  if (breadcrumbEl) breadcrumbEl.textContent = path;
+  _pickerCurrentPath = path;
+  
+  // Deselect on navigation
   _pickerSelectedPath = null;
   const confirmBtn = document.getElementById("btn-confirm-picker");
   if (confirmBtn) confirmBtn.disabled = true;
-  browseLocalPath("This PC");
-};
 
-window.browseLocalPath = async function(path) {
-  const listEl = document.getElementById("picker-list");
-  const breadcrumbEl = document.getElementById("picker-breadcrumb");
-  if (!listEl) return;
-
-  listEl.innerHTML = '<div class="flex-center" style="height:100%"><div class="spinner"></div></div>';
-  if (breadcrumbEl) breadcrumbEl.textContent = path;
-  _pickerCurrentPath = path;
+  // Manage nav stack
+  if (!isBack) {
+    _pickerNavStack.push(path);
+  }
+  if (backBtn) backBtn.style.display = _pickerNavStack.length > 1 ? "" : "none";
 
   try {
     const res = await fetch(`${API_BASE}/system/browse?path=${encodeURIComponent(path)}`);
     const data = await res.json();
 
     if (data.error) {
-      listEl.innerHTML = `<div class="text-center mt-lg" style="color:var(--red);">${data.error}</div>`;
+      listEl.innerHTML = `<div style="padding:24px;text-align:center;color:var(--color-error);">${data.error}</div>`;
       return;
     }
 
@@ -501,35 +694,47 @@ window.browseLocalPath = async function(path) {
     data.items.forEach(item => {
       const icon = item.type === "drive" ? "💽" : (item.is_dir ? "📁" : "📄");
       const isSelectable = item.is_dir && item.name !== "..";
-      const onclick = item.is_dir
-        ? `onclick="event.stopPropagation(); browseLocalPath('${item.path.replace(/\\/g, "\\\\")}')"`
+      const escapedPath = item.path.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+
+      // Single click = select, Double click = open (for directories)
+      const onclickAttr = isSelectable
+        ? `onclick="_localPickerSelect(this, '${escapedPath}')"`
+        : "";
+      const ondblclickAttr = item.is_dir
+        ? `ondblclick="browseLocalPath('${escapedPath}')"`
         : "";
 
       html += `
         <div class="picker-item ${item.is_dir ? 'is-dir' : 'is-file'}"
              data-path="${item.path}"
-             ${onclick}
-             style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; transition:all 0.2s;">
-          <span style="font-size:1.2rem;">${icon}</span>
-          <div style="flex:1; min-width:0;">
-            <div style="font-size:0.9rem; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${item.name}</div>
-            ${item.size ? `<span style="font-size:0.7rem; color:var(--text-dim);">${formatSize(item.size)}</span>` : ""}
-          </div>
-          ${isSelectable ? `<button class="btn-icon" style="font-size:0.7rem; opacity:0.6;" onclick="event.stopPropagation(); selectPickerItem(this, '${item.path.replace(/\\/g, "\\\\")}')">Select</button>` : ""}
+             ${onclickAttr} ${ondblclickAttr}>
+          <span class="picker-item-icon">${icon}</span>
+          <span class="picker-item-name">${item.name}</span>
+          ${item.size ? `<span class="picker-item-meta">${formatSize(item.size)}</span>` : ""}
+          ${item.is_dir && item.name !== ".." ? '<span class="picker-item-chevron"><i class="fas fa-chevron-right"></i></span>' : ""}
         </div>
       `;
     });
-    listEl.innerHTML = html || '<div class="text-center mt-lg color-dim">Empty folder</div>';
+    listEl.innerHTML = html || '<div style="padding:24px;text-align:center;color:var(--text-dim);">Empty folder</div>';
   } catch (err) {
-    listEl.innerHTML = `<div class="text-center mt-lg" style="color:var(--red);">Failed to browse filesystem.</div>`;
+    listEl.innerHTML = `<div style="padding:24px;text-align:center;color:var(--color-error);">Failed to browse filesystem.</div>`;
   }
+};
+
+// Single click handler for local picker — select a folder
+window._localPickerSelect = function(el, path) {
+  _pickerSelectedPath = path;
+  document.querySelectorAll("#picker-list .picker-item").forEach(item => item.classList.remove("picker-selected"));
+  el.classList.add("picker-selected");
+  const confirmBtn = document.getElementById("btn-confirm-picker");
+  if (confirmBtn) confirmBtn.disabled = false;
 };
 
 window.selectPickerItem = function(btn, path) {
   _pickerSelectedPath = path;
-  document.querySelectorAll(".picker-item").forEach(el => el.style.background = "");
+  document.querySelectorAll(".picker-item").forEach(el => el.classList.remove("picker-selected"));
   const row = btn.closest(".picker-item");
-  if (row) row.style.background = "var(--accent-bg)";
+  if (row) row.classList.add("picker-selected");
   const confirmBtn = document.getElementById("btn-confirm-picker");
   if (confirmBtn) confirmBtn.disabled = false;
 };
