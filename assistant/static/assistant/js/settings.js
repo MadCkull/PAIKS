@@ -827,6 +827,50 @@ window.onCloudProviderChange = function() {
   populateCloudModelDropdown(cp?.value || "Google Gemini", "");
 };
 
+/** Handle Cloud LLM toggle change with confirmation prompt */
+window.onCloudLLMToggle = function(enabled) {
+  const confirmEl = document.getElementById("confirm-cloud-llm");
+  const toggle = document.getElementById("toggle-cloud-llm");
+  const body = document.getElementById("cloud-llm-body");
+  const dot = document.getElementById("dot-cloud-llm");
+
+  if (enabled && !_isInitializingSettings) {
+    // Revert toggle immediately until confirmed
+    if (toggle) toggle.checked = false;
+    // Show confirmation
+    if (confirmEl) confirmEl.classList.add("open");
+  } else {
+    // Disabling OR Initializing
+    if (confirmEl) confirmEl.classList.remove("open");
+    if (enabled) {
+      if (body) body.classList.remove("mec-body-disabled");
+      if (dot) { dot.className = "status-dot green"; dot.title = "Enabled"; }
+    } else {
+      if (body) body.classList.add("mec-body-disabled");
+      if (dot) { dot.className = "status-dot gray"; dot.title = "Disabled"; }
+    }
+    // Only save if this was a user interaction, not page load
+    if (!_isInitializingSettings) settingsTriggerAutosave();
+  }
+};
+
+/** Callback for Cloud LLM confirmation prompt */
+window.confirmEnableCloudLLM = function(confirmed) {
+  const confirmEl = document.getElementById("confirm-cloud-llm");
+  const toggle = document.getElementById("toggle-cloud-llm");
+  const body = document.getElementById("cloud-llm-body");
+  const dot = document.getElementById("dot-cloud-llm");
+
+  if (confirmed) {
+    if (toggle) toggle.checked = true;
+    if (body) body.classList.remove("mec-body-disabled");
+    if (dot) { dot.className = "status-dot green"; dot.title = "Enabled"; }
+    settingsTriggerAutosave();
+  }
+  
+  if (confirmEl) confirmEl.classList.remove("open");
+};
+
 /** Show key validation result in the settings modal */
 function _showKeyStatus(valid, message) {
   const el = document.getElementById("cloud-key-status");

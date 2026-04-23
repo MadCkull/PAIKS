@@ -395,6 +395,18 @@
               <input type="checkbox" id="toggle-cloud-llm" onchange="onCloudLLMToggle(this.checked)"/>
               <div class="toggle-track"><div class="toggle-thumb"></div></div>
             </label>
+
+            <!-- Cloud LLM Enable Confirmation (hidden by default) -->
+            <div class="confirm-expand" id="confirm-cloud-llm">
+              <div class="confirm-inner">
+                <p>
+                  <i class="fas fa-triangle-exclamation" style="color:var(--amber);margin-right:6px;"></i>
+                  Queries & retrieved chunks will be sent to third-party APIs. Continue?
+                </p>
+                <button class="btn-confirm-yes" onclick="confirmEnableCloudLLM(true)">Continue</button>
+                <button class="btn-confirm-no" onclick="confirmEnableCloudLLM(false)">Cancel</button>
+              </div>
+            </div>
           </div>
           <!-- Collapsible body — hidden when toggle is off -->
           <div class="mec-body mec-body-disabled" id="cloud-llm-body">
