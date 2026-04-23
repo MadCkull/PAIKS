@@ -33,8 +33,9 @@ urlpatterns = [
     path("rag/wipe-db",         rag.wipe_db),
     path("rag/debug/indices",   rag.debug_indices),
     path("rag/summary/generate", rag.generate_summary),
-    path("rag/llm/status",      llm.status),
-    path("rag/llm/config",      llm.config),
+    path("rag/llm/status",        llm.status),
+    path("rag/llm/config",        llm.config),
+    path("rag/llm/validate-key",  llm.validate_key),
     # Local files
     path("local/files",         local_files.list_files),
     path("local/tree",          local_files.get_tree),

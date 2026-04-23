@@ -668,6 +668,38 @@
   color: var(--text-muted);
 }
 
+/* ── Dual section styles (Local + Cloud) ── */
+.model-dropdown-section-header {
+  padding: 8px 16px 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.model-section-cloud {
+  color: var(--accent-light);
+}
+
+.model-dropdown-divider {
+  height: 1px;
+  background: var(--glass-border);
+  margin: 4px 12px;
+}
+
+.model-item-cloud {
+  color: var(--accent-light) !important;
+}
+
+.active-cloud {
+  background: var(--accent-bg) !important;
+  color: var(--accent) !important;
+  font-weight: 600;
+}
 
 /* === MODERN CHAT INPUT BAR REDESIGN === */
 

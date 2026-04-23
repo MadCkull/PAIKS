@@ -14,66 +14,75 @@ window.switchSettingsTab = function(btn, tabId) {
 };
 
 /* ── Autosave badge & Persistence ────────────────────────────── */
+/** Gathers all settings from the UI into a nested object */
+function _gatherSettingsData() {
+  return {
+    general: {
+      system_prompt: document.getElementById("system-prompt")?.value || "",
+      context_memory_limit: parseInt(document.getElementById("ctx-slider")?.value || 6),
+      accent_color: document.querySelector(".accent-swatch.active")?.dataset.accent || "purple"
+    },
+    sources: {
+      cloud_enabled: document.getElementById("toggle-cloud")?.checked || false,
+      local_enabled: document.getElementById("toggle-local")?.checked || false
+    },
+    rag: {
+      chunk_size: parseInt(document.getElementById("chunk-size")?.value || 512),
+      chunk_overlap: parseInt(document.getElementById("chunk-overlap")?.value || 64),
+      top_k: parseInt(document.getElementById("topk")?.value || 30),
+      top_n: parseInt(document.getElementById("topn")?.value || 5),
+      rerank_enabled: document.getElementById("rerank-toggle")?.checked || false,
+      auto_summarise: document.getElementById("auto-summarise-toggle")?.checked || false
+    },
+    models: {
+      cloud_llm_enabled: document.getElementById("toggle-cloud-llm")?.checked || false,
+      cloud_provider: document.getElementById("cloud-llm-provider")?.value || "Google Gemini",
+      cloud_key: document.getElementById("cloud-llm-key")?.value || "",
+      cloud_model: document.getElementById("cloud-llm-model")?.value || "",
+      embed_model: document.getElementById("embed-model-select")?.value || "nomic-embed-text"
+    },
+    data: {
+      sync_interval: document.getElementById("sync-interval-select")?.value || "30"
+    }
+  };
+}
+
+/** 
+ * Forces an immediate save of current settings to the backend.
+ * Cancels any pending autosave timer.
+ */
+window.settingsFlushNow = async function() {
+  if (_isInitializingSettings) return;
+  clearTimeout(_settingsAutosaveTimer);
+  
+  const badge = document.getElementById("autosave-badge");
+  if (badge) {
+    badge.classList.add("show");
+    setTimeout(() => badge.classList.remove("show"), 2000);
+  }
+
+  const data = _gatherSettingsData();
+  try {
+    const res = await fetch(`${API_BASE}/system/settings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRFToken": getCsrfToken() },
+      body: JSON.stringify(data)
+    });
+    const resJson = await res.json();
+    window.appSettings = resJson.settings || window.appSettings;
+    if (typeof window.revalidateFileTree === "function") window.revalidateFileTree();
+    return resJson;
+  } catch (err) {
+    console.error("Manual save failed:", err);
+    throw err;
+  }
+};
+
 window.settingsTriggerAutosave = function() {
   if (_isInitializingSettings) return;
   clearTimeout(_settingsAutosaveTimer);
-  _settingsAutosaveTimer = setTimeout(async () => {
-    // 1. Show Visual Feedback
-    const badge = document.getElementById("autosave-badge");
-    if (badge) {
-       badge.classList.add("show");
-       setTimeout(() => badge.classList.remove("show"), 2000);
-    }
-
-    // 2. Gather Data for Persistence (Nested Structure)
-    const data = {
-      general: {
-        system_prompt: document.getElementById("system-prompt")?.value || "",
-        context_memory_limit: parseInt(document.getElementById("ctx-slider")?.value || 6),
-        accent_color: document.querySelector(".accent-swatch.active")?.dataset.accent || "purple"
-      },
-      sources: {
-        cloud_enabled: document.getElementById("toggle-cloud")?.checked || false,
-        local_enabled: document.getElementById("toggle-local")?.checked || false
-      },
-      rag: {
-        chunk_size: parseInt(document.getElementById("chunk-size")?.value || 512),
-        chunk_overlap: parseInt(document.getElementById("chunk-overlap")?.value || 64),
-        top_k: parseInt(document.getElementById("topk")?.value || 30),
-        top_n: parseInt(document.getElementById("topn")?.value || 5),
-        rerank_enabled: document.getElementById("rerank-toggle")?.checked || false,
-        auto_summarise: document.getElementById("auto-summarise-toggle")?.checked || false
-      },
-      models: {
-        cloud_llm_enabled: document.getElementById("toggle-cloud-llm")?.checked || false,
-        cloud_provider: document.getElementById("cloud-llm-provider")?.value || "Google Gemini",
-        cloud_key: document.getElementById("cloud-llm-key")?.value || "",
-        cloud_model: document.getElementById("cloud-llm-model")?.value || "gemini-1.5-pro",
-        embed_model: document.getElementById("embed-model-select")?.value || "nomic-embed-text"
-      },
-      data: {
-        sync_interval: document.getElementById("sync-interval-select")?.value || "30"
-      }
-    };
-
-    // 3. POST to Backend & Update Cache
-    try {
-      const res = await fetch(`${API_BASE}/system/settings`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRFToken": getCsrfToken() },
-        body: JSON.stringify(data)
-      });
-      const resJson = await res.json();
-      
-      // Mutate local cache mapped to backend response
-      window.appSettings = resJson.settings || window.appSettings;
-      
-      // Trigger Drive sync
-      if (typeof window.revalidateFileTree === "function") window.revalidateFileTree();
-      
-    } catch (err) {
-      console.error("Autosave failed:", err);
-    }
+  _settingsAutosaveTimer = setTimeout(() => {
+    window.settingsFlushNow();
   }, 800);
 };
 
@@ -529,8 +538,10 @@ window.updateSettingsModal = async function() {
     if (cp) cp.value = mod.cloud_provider || "Google Gemini";
     const ck = document.getElementById("cloud-llm-key");
     if (ck) ck.value = mod.cloud_key || "";
-    const cm = document.getElementById("cloud-llm-model");
-    if (cm) cm.value = mod.cloud_model || "gemini-1.5-pro";
+
+    // Populate model dropdown from backend (which reads GEMINI_MODELS from .env)
+    populateCloudModelDropdown(mod.cloud_provider || "Google Gemini", mod.cloud_model || "");
+
     const em = document.getElementById("embed-model-select");
     if (em) em.value = mod.embed_model || "nomic-embed-text";
 
@@ -764,7 +775,120 @@ window.confirmLocalPicker = async function() {
   }
 };
 
+// ── Cloud LLM UI Helpers ─────────────────────────────────────────────────
+
+/**
+ * Populate the cloud model <select> in Settings → Models.
+ * Fetches the model list from /api/rag/llm/status (which reads GEMINI_MODELS from .env).
+ * Falls back to a single "No models" option if .env is empty.
+ */
+window.populateCloudModelDropdown = async function(provider = "Google Gemini", savedModel = "") {
+  const sel = document.getElementById("cloud-llm-model");
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Loading…</option>';
+  sel.disabled = true;
+
+  try {
+    const res = await fetchWithTimeout(`${API_BASE}/rag/llm/status`, {}, 4000);
+    const data = await res.json();
+    const models = data.cloud_models || [];
+
+    if (models.length === 0) {
+      sel.innerHTML = '<option value="">No models in GEMINI_MODELS (.env)</option>';
+      sel.disabled = true;
+      return;
+    }
+
+    sel.innerHTML = models.map(m =>
+      `<option value="${m}"${m === savedModel ? " selected" : ""}>${m}</option>`
+    ).join("");
+    sel.disabled = false;
+
+    // If nothing matches saved model, auto-select first and persist it
+    if (!models.includes(savedModel) && models.length > 0) {
+      sel.value = models[0];
+    }
+  } catch {
+    sel.innerHTML = '<option value="">Failed to load models</option>';
+    sel.disabled = true;
+  }
+};
+
+/** Reset key validation UI when user edits the key */
+window.onCloudKeyInput = function() {
+  const statusEl = document.getElementById("cloud-key-status");
+  if (statusEl) statusEl.style.display = "none";
+  settingsTriggerAutosave();
+};
+
+/** Re-populate model dropdown when provider changes */
+window.onCloudProviderChange = function() {
+  const cp = document.getElementById("cloud-llm-provider");
+  populateCloudModelDropdown(cp?.value || "Google Gemini", "");
+};
+
+/** Show key validation result in the settings modal */
+function _showKeyStatus(valid, message) {
+  const el = document.getElementById("cloud-key-status");
+  const icon = document.getElementById("cloud-key-status-icon");
+  const text = document.getElementById("cloud-key-status-text");
+  if (!el) return;
+  el.style.display = "flex";
+  if (valid === true) {
+    el.style.color = "var(--color-success, #10b981)";
+    if (icon) icon.className = "fas fa-circle-check";
+  } else if (valid === false) {
+    el.style.color = "var(--color-error, #f43f5e)";
+    if (icon) icon.className = "fas fa-circle-xmark";
+  } else {
+    el.style.color = "var(--text-dim)";
+    if (icon) icon.className = "fas fa-circle-exclamation";
+  }
+  if (text) text.textContent = message;
+}
+
+/** Test the API key by calling the validate-key endpoint */
+window.testCloudApiKey = async function() {
+  const btn = document.getElementById("btn-test-key");
+  const keyInput = document.getElementById("cloud-llm-key");
+  if (!keyInput?.value.trim()) {
+    _showKeyStatus(false, "Please enter an API key first");
+    return;
+  }
+  // Save current settings first so the backend has the latest key
+  try {
+    await window.settingsFlushNow();
+  } catch (err) {
+    _showKeyStatus(null, "Failed to save settings before test");
+    return;
+  }
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin" style="font-size:0.7rem;"></i> Testing…'; }
+  _showKeyStatus(null, "Testing…");
+  try {
+    const res = await fetchWithTimeout(`${API_BASE}/rag/llm/validate-key`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRFToken": getCsrfToken() },
+    }, 12000);
+    const data = await res.json();
+    if (data.valid === true) {
+      _showKeyStatus(true, "API key is valid ✓");
+    } else if (data.valid === false) {
+      _showKeyStatus(false, data.error || "Invalid API key");
+    } else {
+      _showKeyStatus(null, data.error || "Could not verify (network error)");
+    }
+  } catch (err) {
+    _showKeyStatus(null, "Network error — could not verify");
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-plug" style="font-size:0.7rem;"></i> Test Key'; }
+  }
+};
+
 // ── LLM CONFIG ───────────────────────────────────────────────
+
+// Initialise globals to safe defaults
+window.current_llm_model = null;
+window.current_llm_cloud = false;
 
 window.loadLLMStatus = async function() {
   const btn = document.getElementById("chat-model-btn");
@@ -772,52 +896,152 @@ window.loadLLMStatus = async function() {
   const nameLabel = document.getElementById("chat-model-name");
   const dropdownList = document.getElementById("model-dropdown-list");
 
-  // Use SSE-cached data if available (avoids redundant HTTP fetch)
-  let data = (window._liveStats && window._liveStats.llm_status)
-    ? window._liveStats.llm_status
-    : null;
+  // Keep disabled (Checking…) until we know the real state
+  if (btn) btn.disabled = true;
+  if (indicator) indicator.className = "chat-model-indicator status-offline";
+  if (nameLabel) nameLabel.textContent = "Checking…";
 
-  if (!data) {
-    // Fallback: HTTP fetch (first load before SSE starts pushing)
-    try {
-      const res = await fetchWithTimeout(`${API_BASE}/rag/llm/status`, {}, 5000);
-      data = await res.json();
-    } catch {
-      if (btn) btn.disabled = true;
-      if (indicator) indicator.className = "chat-model-indicator status-offline";
-      if (nameLabel) nameLabel.textContent = "Unavailable";
-      return;
-    }
+  // Fetch fresh data from backend (always — SSE cache may be stale)
+  let data;
+  try {
+    const res = await fetchWithTimeout(`${API_BASE}/rag/llm/status`, {}, 5000);
+    data = await res.json();
+    // Cache for SSE use
+    window._liveStats = window._liveStats || {};
+    window._liveStats.llm_status = data;
+  } catch {
+    if (btn) btn.disabled = true;
+    if (indicator) indicator.className = "chat-model-indicator status-offline";
+    if (nameLabel) nameLabel.textContent = "Unavailable";
+    return;
   }
 
-  window.current_llm_model = data.current_model || "";
   if (!btn) return;
 
-  if (data.reachable) {
-    if (indicator) indicator.className = "chat-model-indicator status-online";
-    if (nameLabel) nameLabel.textContent = data.current_model || "Connected";
-    btn.disabled = false;
-    if (dropdownList && data.available_models?.length) {
-      dropdownList.innerHTML = data.available_models
-        .filter(m => !m.toLowerCase().includes('embed'))
-        .map(m => `
-          <button class="model-dropdown-item ${m === data.current_model ? 'active' : ''}" onclick="selectChatModel('${m}')">
-            ${m} ${m === data.current_model ? ' ✓' : ''}
-          </button>
-        `).join("");
-    }
-  } else {
+  const localReachable  = data.reachable || false;
+  const localModels     = (data.available_models || []).filter(m => !m.toLowerCase().includes("embed"));
+  const cloudEnabled    = data.cloud_enabled || false;
+  const cloudModels     = data.cloud_models || [];   // only present when cloud_enabled
+  const cloudModel      = data.cloud_model || "";
+  const cloudKeySet     = !!data.cloud_key_set;
+  const cloudProvider   = data.cloud_provider || "Cloud";
+
+  // ── Decide the active model ────────────────────────────────────────────
+  // On page load, respect the saved selection:
+  // if cloud is enabled and was the last active, restore it. Otherwise keep local.
+  // window.current_llm_cloud persists across SSE refreshes (set by selectChatModel).
+  const atLeastOneAvailable = localReachable || (cloudEnabled && cloudKeySet && cloudModels.length > 0);
+
+  if (!atLeastOneAvailable) {
     if (indicator) indicator.className = "chat-model-indicator status-offline";
     if (nameLabel) nameLabel.textContent = "Offline";
     btn.disabled = true;
+    if (dropdownList) dropdownList.innerHTML = `<div class="model-dropdown-empty">No LLM available</div>`;
+    return;
   }
+
+  // ── Restore active model from persistent system.json ─────────────────
+  // active_llm is the single source of truth written by selectChatModel.
+  // Only initialise window vars on first load (null); preserve them on SSE-triggered refreshes.
+  if (window.current_llm_model === null) {
+    // Fetch app settings to read active_llm
+    let activeLlm = "local";
+    try {
+      const sRes = await fetchWithTimeout(`${API_BASE}/system/settings`, {}, 3000);
+      const sData = await sRes.json();
+      activeLlm = sData?.models?.active_llm || "local";
+    } catch { /* defaults to local */ }
+
+    if (activeLlm === "cloud" && cloudEnabled && cloudKeySet && cloudModels.length > 0) {
+      window.current_llm_cloud = true;
+      window.current_llm_model = cloudModel || cloudModels[0];
+    } else {
+      window.current_llm_cloud = false;
+      window.current_llm_model = data.current_model || localModels[0] || "llama3.2";
+    }
+  }
+
+  // If cloud is selected but now unavailable (no internet / key removed), fallback to local
+  if (window.current_llm_cloud && (!cloudEnabled || !cloudKeySet)) {
+    window.current_llm_cloud = false;
+    window.current_llm_model = data.current_model || localModels[0] || "llama3.2";
+  }
+
+  // ── Update button ───────────────────────────────────────────────────────
+  if (window.current_llm_cloud) {
+    if (indicator) indicator.className = "chat-model-indicator status-online";
+    if (nameLabel) nameLabel.textContent = `✦ ${window.current_llm_model}`;
+  } else {
+    if (indicator) indicator.className = localReachable ? "chat-model-indicator status-online" : "chat-model-indicator status-offline";
+    if (nameLabel) nameLabel.textContent = window.current_llm_model || data.current_model || "llama3.2";
+  }
+  btn.disabled = false;
+
+  // ── Build dropdown list ─────────────────────────────────────────────────
+  if (!dropdownList) return;
+  let html = "";
+
+  // 1. LOCAL section — always shown
+  html += `<div class="model-dropdown-section-header"><i class="fas fa-microchip"></i>&nbsp; Local (Ollama)</div>`;
+  if (!localReachable || localModels.length === 0) {
+    html += `<div class="model-dropdown-empty">Ollama offline or no models loaded</div>`;
+  } else {
+    localModels.forEach(m => {
+      const isActive = !window.current_llm_cloud && m === window.current_llm_model;
+      html += `<button class="model-dropdown-item${isActive ? " active" : ""}" onclick="selectChatModel('${m}', 'local')">
+        <span>${m}</span>${isActive ? ' <i class="fas fa-check" style="font-size:0.7rem;opacity:0.7;"></i>' : ""}
+      </button>`;
+    });
+  }
+
+  // 2. CLOUD section — only if cloud is enabled in settings
+  if (cloudEnabled) {
+    html += `<div class="model-dropdown-divider"></div>`;
+    html += `<div class="model-dropdown-section-header model-section-cloud"><i class="fas fa-cloud"></i>&nbsp; ${cloudProvider}</div>`;
+    if (!cloudKeySet) {
+      // Show models greyed out with a warning — key not set
+      html += `<div class="model-dropdown-empty" style="font-size:0.75rem;">⚠ No API key — go to Settings → Models</div>`;
+      cloudModels.forEach(m => {
+        html += `<button class="model-dropdown-item model-item-cloud" disabled
+          style="opacity:0.4;cursor:not-allowed;" title="Set an API key in Settings → Models">
+          <span>✦ ${m}</span>
+        </button>`;
+      });
+    } else if (cloudModels.length === 0) {
+      html += `<div class="model-dropdown-empty">No models — add to GEMINI_MODELS in .env</div>`;
+    } else {
+      cloudModels.forEach(m => {
+        const isActive = window.current_llm_cloud && m === window.current_llm_model;
+        html += `<button class="model-dropdown-item model-item-cloud${isActive ? " active active-cloud" : ""}" onclick="selectChatModel('${m}', 'cloud')">
+          <span>✦ ${m}</span>${isActive ? ' <i class="fas fa-check" style="font-size:0.7rem;opacity:0.7;"></i>' : ""}
+        </button>`;
+      });
+    }
+  }
+
+  dropdownList.innerHTML = html;
 };
 
 // Auto-update LLM UI when SSE pushes new llm_status
 if (typeof PAIKSEventBus !== "undefined") {
   PAIKSEventBus.on("llm_status", function(data) {
-    // Update the chat model button in real-time
-    if (typeof loadLLMStatus === "function") loadLLMStatus();
+    window._liveStats = window._liveStats || {};
+    window._liveStats.llm_status = data;
+    // Don't call loadLLMStatus here — it does an HTTP fetch which is redundant.
+    // Instead, update the button label without resetting the user's selection.
+    const cloudEnabled = data.cloud_enabled || false;
+    const localReachable = data.reachable || false;
+    const indicator = document.getElementById("chat-model-indicator");
+    const btn = document.getElementById("chat-model-btn");
+    // If cloud is selected but now offline, fallback
+    if (window.current_llm_cloud && (!cloudEnabled || !data.cloud_key_set)) {
+      window.current_llm_cloud = false;
+      window.current_llm_model = null;
+      loadLLMStatus(); // full rebuild needed
+    } else if (!window.current_llm_cloud && indicator) {
+      indicator.className = localReachable ? "chat-model-indicator status-online" : "chat-model-indicator status-offline";
+      if (!localReachable && btn) btn.disabled = true;
+    }
   });
 }
 
@@ -838,7 +1062,7 @@ window.saveLLMConfig = async function() {
   const providerSelect = document.getElementById("llm-provider-select");
   const base_url = urlInput?.value.trim();
   const provider = providerSelect?.value || "ollama";
-  const model = window.current_llm_model || "llama3.2";
+  const model = (window.current_llm_cloud ? null : window.current_llm_model) || "llama3.2";
 
   try {
     await fetch(`${API_BASE}/rag/llm/config`, {
@@ -853,31 +1077,90 @@ window.saveLLMConfig = async function() {
   }
 };
 
-window.selectChatModel = async function(modelName) {
-  const urlInput = document.getElementById("llm-url-input");
-  const providerSelect = document.getElementById("llm-provider-select");
-  const base_url = urlInput?.value.trim() || "http://localhost:11434";
-  const provider = providerSelect?.value || "ollama";
-
-  // ── Optimistic UI Update (Instant Response) ──
-  const nameLabel = document.getElementById("chat-model-name");
-  if (nameLabel) nameLabel.textContent = modelName;
+window.selectChatModel = async function(modelName, source) {
   const menu = document.getElementById("model-dropdown-menu");
-  if (menu) menu.classList.add("hidden");
-  document.querySelectorAll(".model-dropdown-item").forEach(item => {
-     item.classList.toggle("active", item.textContent.trim().startsWith(modelName));
-  });
-  window.current_llm_model = modelName;
+  const nameLabel = document.getElementById("chat-model-name");
+  const btn = document.getElementById("chat-model-btn");
 
-  try {
-    await fetch(`${API_BASE}/rag/llm/config`, {
+  // Close dropdown immediately
+  if (menu) {
+    menu.classList.add("hidden");
+    if (btn) btn.setAttribute("aria-expanded", "false");
+  }
+
+  // ── Helper: persist active_llm to system.json ────────────────────────
+  const saveActiveLlm = async (llmType, extra = {}) => {
+    await fetch(`${API_BASE}/system/settings`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-CSRFToken": getCsrfToken() },
-      body: JSON.stringify({ base_url, model: modelName, provider }),
+      body: JSON.stringify({ models: { active_llm: llmType, ...extra } })
     });
-    showToast(`Model set to ${modelName}`, "success");
-    await loadLLMStatus();
-  } catch (err) {
-    showToast("Failed to change model", "error");
+    // Sync local settings cache
+    if (window.appSettings?.models) {
+      window.appSettings.models.active_llm = llmType;
+      Object.assign(window.appSettings.models, extra);
+    }
+  };
+
+  // ── Update dropdown active states ─────────────────────────────────────
+  const updateDropdownActive = (activeModelName, isCloud) => {
+    document.querySelectorAll(".model-dropdown-item").forEach(item => {
+      item.classList.remove("active", "active-cloud");
+      item.querySelectorAll(".fa-check").forEach(el => el.remove());
+    });
+    const selector = isCloud ? ".model-item-cloud" : ".model-dropdown-item:not(.model-item-cloud)";
+    const activeEl = [...document.querySelectorAll(selector)]
+      .find(b => b.querySelector("span")?.textContent.includes(activeModelName));
+    if (activeEl) {
+      activeEl.classList.add("active");
+      if (isCloud) activeEl.classList.add("active-cloud");
+      activeEl.insertAdjacentHTML("beforeend", ' <i class="fas fa-check" style="font-size:0.7rem;opacity:0.7;"></i>');
+    }
+  };
+
+  if (source === "cloud") {
+    // ── Cloud model selected ─────────────────────────────────────────────
+    window.current_llm_model = modelName;
+    window.current_llm_cloud = true;
+    if (nameLabel) nameLabel.textContent = `✦ ${modelName}`;
+    updateDropdownActive(modelName, true);
+
+    try {
+      // Persist: active_llm=cloud AND update cloud_model
+      await saveActiveLlm("cloud", { cloud_model: modelName });
+      showToast(`☁ Cloud: ${modelName}`, "success");
+    } catch (err) {
+      showToast("Failed to save model selection", "error");
+    }
+
+  } else {
+    // ── Local Ollama model selected ──────────────────────────────────────
+    window.current_llm_model = modelName;
+    window.current_llm_cloud = false;
+    if (nameLabel) nameLabel.textContent = modelName;
+    updateDropdownActive(modelName, false);
+
+    try {
+      // Persist: active_llm=local AND update ollama llm.json
+      await saveActiveLlm("local");
+      // Also save the chosen model name to llm.json so Ollama uses it
+      const urlInput = document.getElementById("llm-url-input");
+      const providerSelect = document.getElementById("llm-provider-select");
+      const base_url = urlInput?.value.trim() || "http://localhost:11434";
+      const provider = providerSelect?.value || "ollama";
+      await fetch(`${API_BASE}/rag/llm/config`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": getCsrfToken() },
+        body: JSON.stringify({ base_url, model: modelName, provider }),
+      });
+      showToast(`💻 Local: ${modelName}`, "success");
+    } catch (err) {
+      showToast("Failed to save model selection", "error");
+    }
   }
 };
+
+
+
+
+

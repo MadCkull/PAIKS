@@ -101,20 +101,49 @@ def _collect_rag_status() -> dict:
 def _collect_llm_status() -> dict:
     """Collect the same data as GET /api/rag/llm/status, but internally."""
     try:
+        import os
+        from api.services.config import load_app_settings, load_llm_config
+        
+        settings = load_app_settings()
+        models_cfg = settings.get("models", {})
+        cloud_enabled = models_cfg.get("cloud_llm_enabled", False)
+        
+        # Always collect local models
         from api.services.llm_client import ollama_list_models
-        from api.services.config import load_llm_config
-
         cfg = load_llm_config()
-        models = ollama_list_models(cfg.get("base_url", "http://localhost:11434"))
-        return {
-            "reachable": True,
+        local_models = []
+        local_reachable = False
+        try:
+            local_models = ollama_list_models(cfg.get("base_url", "http://localhost:11434"))
+            local_reachable = True
+        except Exception:
+            pass
+        
+        result = {
+            "reachable": local_reachable,
             "provider": cfg.get("provider", "ollama"),
             "current_model": cfg.get("model", ""),
             "base_url": cfg.get("base_url", ""),
-            "available_models": models,
+            "available_models": local_models,
+            "cloud_enabled": cloud_enabled,
         }
+        
+        if cloud_enabled:
+            from api.services.config import get_cloud_models
+            cloud_key = models_cfg.get("cloud_key", "").strip()
+            cloud_provider = models_cfg.get("cloud_provider", "Google Gemini")
+            cloud_models = get_cloud_models(cloud_provider)  # reads GEMINI_MODELS from .env
+            # Snap cloud_model to .env list (fixes stale/invalid saved values)
+            saved_model = models_cfg.get("cloud_model", "")
+            cloud_model = saved_model if saved_model in cloud_models else (cloud_models[0] if cloud_models else "")
+            result["cloud_models"] = cloud_models
+            result["cloud_model"] = cloud_model
+            result["cloud_key_set"] = bool(cloud_key)
+            result["cloud_provider"] = cloud_provider
+        
+        return result
     except Exception:
-        return {"reachable": False}
+        return {"reachable": False, "cloud_enabled": False}
 
 
 def _hash_snapshot(data: dict) -> str:

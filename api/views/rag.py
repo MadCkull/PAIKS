@@ -466,12 +466,10 @@ def search(request):
 
 
 def _file_specific_query(query, llm_query, file_match, client, embedder, cloud_enabled, local_enabled):
-    """Handle queries about a specific file  -  fetch all its chunks + summary
+    """Handle queries about a specific file — fetch all its chunks + summary
     and run the query engine over just that file's content."""
     file_id = file_match["file_id"]
     collection = file_match["collection"]
-    
-    # Build a retriever for just this collection
     idx = VectorStoreIndex.from_vector_store(
         get_vector_store(collection), embed_model=embedder
     )

@@ -85,7 +85,6 @@ async function ragSearch(queryOverride) {
     const res = await fetchWithTimeout(`${API_BASE}/rag/search`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      // Backend now owns history — we just send query + session_id
       body: JSON.stringify({ query, session_id: _activeSid || null }),
     }, 300000);
     const data = await res.json();
