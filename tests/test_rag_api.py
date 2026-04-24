@@ -20,9 +20,12 @@ def api_rf():
     return RequestFactory()
 
 
+@pytest.mark.django_db
 @patch("api.services.rag.indexer.get_qdrant_client")
-def test_rag_status_endpoint(mock_client, api_rf):
+def test_rag_status_endpoint(mock_client, api_rf, doc_track_factory):
     """Validates the status endpoint correctly reads from the Qdrant DB."""
+    doc_track_factory(file_id="local__test.txt", sync_status="synced")
+
     mock_q = MagicMock()
     mock_q.collection_exists.return_value = True
     coll_mock = MagicMock()
@@ -36,9 +39,10 @@ def test_rag_status_endpoint(mock_client, api_rf):
     assert response.status_code == 200
     data = json.loads(response.content)
     assert data["indexed"] is True
-    assert data["total_chunks"] == 50
+    assert data["total_chunks"] == 1
 
 
+@pytest.mark.django_db
 @patch("api.services.rag.indexer.get_qdrant_client")
 def test_rag_status_no_collections(mock_client, api_rf):
     """Status endpoint with no collections should return not indexed."""

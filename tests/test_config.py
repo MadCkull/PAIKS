@@ -29,29 +29,31 @@ class TestAppSettings:
 
     def test_save_and_load_round_trip(self, tmp_storage):
         custom = {
-            "cloud_enabled": False,
-            "local_enabled": True,
-            "local_root_path": "D:\\TestDocs",
-            "drive_folder_id": "abc123",
-            "drive_folder_name": "My Folder",
+            "sources": {
+                "cloud_enabled": False,
+                "local_enabled": True,
+                "local_root_path": "D:\\TestDocs",
+                "drive_folder_id": "abc123",
+                "drive_folder_name": "My Folder",
+            }
         }
         save_app_settings(custom)
         loaded = load_app_settings()
-        assert loaded["cloud_enabled"] is False
-        assert loaded["local_root_path"] == "D:\\TestDocs"
-        assert loaded["drive_folder_id"] == "abc123"
+        assert loaded["sources"]["cloud_enabled"] is False
+        assert loaded["sources"]["local_root_path"] == "D:\\TestDocs"
+        assert loaded["sources"]["drive_folder_id"] == "abc123"
 
     def test_load_merges_with_defaults(self, tmp_storage):
         """Partial settings file should be merged with defaults."""
-        partial = {"cloud_enabled": False}
-        (tmp_storage / "app_settings.json").write_text(
+        partial = {"sources": {"cloud_enabled": False}}
+        (tmp_storage / "system.json").write_text(
             json.dumps(partial), encoding="utf-8"
         )
         loaded = load_app_settings()
-        assert loaded["cloud_enabled"] is False
+        assert loaded["sources"]["cloud_enabled"] is False
         # Default keys should still be present
-        assert "local_enabled" in loaded
-        assert "local_root_path" in loaded
+        assert "local_enabled" in loaded["sources"]
+        assert "local_root_path" in loaded["sources"]
 
 
 class TestLLMConfig:
@@ -105,15 +107,14 @@ class TestFolderConfig:
     def test_save_folder_config_updates_app_settings(self, tmp_storage):
         save_folder_config("folder_abc", "My Research")
         settings = load_app_settings()
-        assert settings["drive_folder_id"] == "folder_abc"
-        assert settings["drive_folder_name"] == "My Research"
+        assert settings["sources"]["drive_folder_id"] == "folder_abc"
+        assert settings["sources"]["drive_folder_name"] == "My Research"
 
     def test_load_folder_config_from_app_settings(self, tmp_storage):
-        save_app_settings({
-            **_DEFAULT_APP_SETTINGS,
-            "drive_folder_id": "xyz",
-            "drive_folder_name": "Docs",
-        })
+        settings = load_app_settings()
+        settings["sources"]["drive_folder_id"] = "xyz"
+        settings["sources"]["drive_folder_name"] = "Docs"
+        save_app_settings(settings)
         result = load_folder_config()
         assert result["folder_id"] == "xyz"
         assert result["folder_name"] == "Docs"

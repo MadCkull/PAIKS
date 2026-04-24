@@ -153,8 +153,20 @@ class PAIKSLauncher:
             self.ensure_dependencies()
             self.get_project_stats()
 
-            with self.console.status("[bold blue]Cleaning environment...", spinner="dots"):
+            with self.console.status("[bold blue]Preparing environment...", spinner="dots"):
                 self.kill_process_on_port(PORT_DJANGO)
+                
+                # Ensure directories exist
+                (BASE_DIR / ".storage" / "databases").mkdir(parents=True, exist_ok=True)
+                (BASE_DIR / ".storage" / "auth").mkdir(parents=True, exist_ok=True)
+                (BASE_DIR / ".storage" / "logs").mkdir(parents=True, exist_ok=True)
+
+                # Run migrations for all databases
+                subprocess.run([sys.executable, "manage.py", "migrate", "--noinput"], check=True)
+                subprocess.run([sys.executable, "manage.py", "migrate", "--database=chats", "--noinput"], check=True)
+                
+                # Collect static files
+                subprocess.run([sys.executable, "manage.py", "collectstatic", "--noinput"], capture_output=True)
 
             django_proc = subprocess.Popen(
                 [sys.executable, "manage.py", "runserver", str(PORT_DJANGO)],

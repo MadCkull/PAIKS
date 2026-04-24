@@ -9,10 +9,9 @@ logger = logging.getLogger(__name__)
 def get_base_retriever(index: VectorStoreIndex, top_k: int = 30) -> VectorIndexRetriever:
     """
     Creates a base retriever for the given index.
-    In Qdrant, because we enabled enable_hybrid=True on the VectorStore, 
-    LlamaIndex natively passes query strings to Qdrant which uses fast sparse (BM25)
-    search locally under the hood alongside dense vectors.
-    We fetch top_k=30 because this list will later be mercilessly filtered by the reranker.
+    In Qdrant, we currently use dense vectors for stability. 
+    Hybrid search is disabled to avoid heavy external model downloads (FastEmbed).
+    We fetch top_k=30 because this list will later be filtered by the reranker.
     """
     logger.debug(f"Initializing base VectorIndexRetriever with top_k={top_k}")
     return VectorIndexRetriever(
