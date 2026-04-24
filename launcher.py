@@ -2,50 +2,62 @@ import subprocess
 import sys
 import os
 import time
-import signal
 import re
 import socket
 import json
 import pathlib
 from datetime import datetime
 
-# Import rich directly - assuming it's always available in the correct environment
-from rich.console import Console
-from rich.table import Table
-from rich.live import Live
-from rich.panel import Panel
-from rich.layout import Layout
-from rich.status import Status
-from rich.text import Text
-from rich.columns import Columns
-from rich import box
-
 # Configuration
 PORT_DJANGO = 8000
 VENV_PYTHON = os.path.join(".venv", "Scripts", "python.exe")
 REQUIREMENTS = "requirements.txt"
 BASE_DIR = pathlib.Path(__file__).resolve().parent
-SYNC_CACHE_PATH = BASE_DIR / "drive_cache.json"
+SYNC_CACHE_PATH = BASE_DIR / ".storage" / "cache" / "drive_cache.json"
 
 # Self-restart logic to ensure we're in the .venv
 def ensure_venv():
-    """Restarts the script using the .venv python if not already running from there."""
     current_python = sys.executable
     venv_python = str(BASE_DIR / VENV_PYTHON)
     
-    # Check if we are already using the venv python
     if current_python.lower() != venv_python.lower():
         if os.path.exists(venv_python):
-            print(f"[*] Re-launching with virtual environment: {VENV_PYTHON}")
             try:
                 os.execv(venv_python, [venv_python] + sys.argv)
             except Exception as e:
                 print(f"[!] Critical: Failed to restart with .venv python: {e}")
                 sys.exit(1)
         else:
-            print(f"[!] Warning: Virtual environment not found at {VENV_PYTHON}")
+            print(f"[*] Virtual environment not found at {VENV_PYTHON}")
+            print("[*] Creating virtual environment (.venv)...")
+            try:
+                subprocess.check_call([sys.executable, "-m", "venv", ".venv"])
+                print("[*] Virtual environment created successfully.")
+                print(f"[*] Switching to virtual environment...")
+                os.execv(venv_python, [venv_python] + sys.argv)
+            except Exception as e:
+                print(f"[!] Failed to create or launch virtual environment: {e}")
+                sys.exit(1)
 
 ensure_venv()
+
+# Silently ensure rich is available for the UI
+def bootstrap_rich():
+    try:
+        import rich
+    except ImportError:
+        print("[*] Bootstrapping UI components...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "rich"])
+
+bootstrap_rich()
+
+from rich.console import Console
+from rich.table import Table
+from rich.live import Live
+from rich.panel import Panel
+from rich.layout import Layout
+from rich.text import Text
+from rich import box
 
 class PAIKSLauncher:
     def __init__(self):
@@ -57,6 +69,15 @@ class PAIKSLauncher:
             "last_sync": "Never",
             "django_status": "[red]Offline[/red]",
         }
+
+    def ensure_dependencies(self):
+        with self.console.status("[bold blue]Installing packages from requirements.txt... (This may take a minute)[/bold blue]", spinner="bouncingBar"):
+            try:
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "-r", REQUIREMENTS])
+                self.console.print("[bold green]✔ All dependencies are satisfied![/bold green]")
+            except Exception as e:
+                self.console.print(f"[bold red]Error installing dependencies: {e}[/bold red]")
+                sys.exit(1)
 
     def get_project_stats(self):
         """Load real stats from the drive cache."""
@@ -89,13 +110,6 @@ class PAIKSLauncher:
         except:
             return False
 
-    def ensure_dependencies(self):
-        with self.console.status("[bold blue]Verifying dependencies...", spinner="dots"):
-            try:
-                subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "-r", REQUIREMENTS])
-            except Exception as e:
-                self.console.print(f"[bold red]Error updating dependencies: {e}[/bold red]")
-
     def make_dashboard(self):
         layout = Layout()
         layout.split_column(
@@ -104,24 +118,19 @@ class PAIKSLauncher:
             Layout(name="footer", size=3)
         )
         
-        # Header
         header_text = Text("PAIKS - Google Drive AI Assistant", style="bold white on blue", justify="center")
         layout["header"].update(Panel(header_text, box=box.HORIZONTALS))
 
-        # Main Content (Stats & Status)
         main_table = Table.grid(expand=True)
         main_table.add_column(ratio=1)
         main_table.add_column(ratio=1)
 
-        # Status Table
         status_table = Table(box=box.ROUNDED, expand=True, border_style="bright_blue")
         status_table.add_column("Service", style="cyan")
         status_table.add_column("Status", justify="center")
         status_table.add_column("Endpoint", style="green")
-        
         status_table.add_row("Django Server", self.stats["django_status"], f"http://127.0.0.1:{PORT_DJANGO}")
 
-        # Stats Panel
         uptime = str(datetime.now() - self.start_time).split(".")[0]
         stats_text = Text.assemble(
             ("Project Metrics\n", "bold magenta"),
@@ -134,7 +143,6 @@ class PAIKSLauncher:
         main_table.add_row(status_table, stats_panel)
         layout["main"].update(main_table)
 
-        # Footer
         footer_text = Text("Press CTRL+C to safely shutdown all services", style="italic dim", justify="center")
         layout["footer"].update(Panel(footer_text, box=box.HORIZONTALS))
 
@@ -148,7 +156,6 @@ class PAIKSLauncher:
             with self.console.status("[bold blue]Cleaning environment...", spinner="dots"):
                 self.kill_process_on_port(PORT_DJANGO)
 
-            # Start Django
             django_proc = subprocess.Popen(
                 [sys.executable, "manage.py", "runserver", str(PORT_DJANGO)],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
@@ -163,7 +170,7 @@ class PAIKSLauncher:
                     if django_proc.poll() is not None:
                         self.stats["django_status"] = "[bold red]Crashed[/bold red]"
                     
-                    self.get_project_stats() # Refresh stats
+                    self.get_project_stats()
                     live.update(self.make_dashboard())
                     time.sleep(1)
 
