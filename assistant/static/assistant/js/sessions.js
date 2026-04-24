@@ -134,68 +134,23 @@ async function loadSession(id) {
     if (emptyState) emptyState.classList.add('hidden');
 
     for (const msg of messages) {
-        const div = document.createElement('div');
-
         if (msg.role === 'user') {
-            div.className = 'chat-msg chat-msg-user';
-            div.innerHTML = `<div class="chat-msg-avatar">👤</div><div class="chat-msg-bubble">${escapeHtml(msg.text)}</div>`;
+            chatMessages.appendChild(window.createUserBubble(msg.text));
         } else {
             // AI message — restore formatted answer + sources using stored metadata
             const meta = msg.metadata || {};
             const results = meta.results || [];
 
             let answerContent = formatAnswer(msg.text);
-            if (meta.answer_model) {
-                answerContent += `<div style="margin-top:8px;font-size:.7rem;color:var(--text-dim);">Answered by ${escapeHtml(meta.answer_model)}</div>`;
-            }
 
-            let sourcesHtml = '';
-            if (results.length > 0) {
-                // Store results so the Sources Panel works if user clicks it
-                window._lastSourceResults = results;
-                sourcesHtml = `
-                    <div style="margin-top:16px; display:flex; gap:8px;">
-                        <button class="btn btn-sm btn-outline chat-sources-trigger"
-                                style="font-size:0.75rem; padding:6px 14px; border-radius:12px; display:flex; align-items:center; gap:6px; background:rgba(108,92,231,0.05);"
-                                onclick="window._lastSourceResults=${JSON.stringify(results).replace(/"/g,'&quot;')} !== undefined && window.openSourcesPanel()">
-                            <i class="fas fa-stream" style="font-size:0.8rem; color:var(--accent);"></i>
-                            View ${results.length} References
-                        </button>
-                    </div>`;
-                // Cleaner: bind via data attribute
-                sourcesHtml = `
-                    <div style="margin-top:16px; display:flex; gap:8px;">
-                        <button class="btn btn-sm btn-outline chat-sources-trigger"
-                                style="font-size:0.75rem; padding:6px 14px; border-radius:12px; display:flex; align-items:center; gap:6px; background:rgba(108,92,231,0.05);"
-                                onclick="window._lastSourceResults=${encodeURIComponent(JSON.stringify(results))} && window.openSourcesPanel()" data-restore-results="true">
-                            <i class="fas fa-stream" style="font-size:0.8rem; color:var(--accent);"></i>
-                            View ${results.length} References
-                        </button>
-                    </div>`;
-            }
+            const bubble = window.createAssistantBubble(answerContent, {
+                model: meta.answer_model || null,
+                results: results.length > 0 ? results : null,
+                totalResults: results.length,
+            });
 
-            div.className = 'chat-msg chat-msg-ai';
-            div.innerHTML = `
-                <div class="chat-msg-avatar" style="background:var(--accent-bg);color:var(--accent)">🧠</div>
-                <div class="chat-msg-bubble">
-                    <div class="ai-answer-container">${answerContent}</div>
-                    ${sourcesHtml}
-                </div>`;
-
-            // Bind sources button properly
-            if (results.length > 0) {
-                const btn = div.querySelector('.chat-sources-trigger');
-                if (btn) {
-                    const captured = results;
-                    btn.onclick = () => {
-                        window._lastSourceResults = captured;
-                        window.openSourcesPanel();
-                    };
-                }
-            }
+            chatMessages.appendChild(bubble);
         }
-
-        chatMessages.appendChild(div);
     }
 
     if (chatThread) chatThread.scrollTop = chatThread.scrollHeight;

@@ -13,38 +13,29 @@ function formatAnswer(text) {
   return html;
 }
 
-function addChatMessage(type, content) {
+/**
+ * Append a pre-built bubble element to the chat messages container.
+ * Hides the welcome screen and scrolls to bottom.
+ */
+function appendBubble(bubbleEl) {
   const container = document.getElementById("chat-messages");
   if (!container) return;
   const welcome = container.querySelector(".chat-welcome");
   if (welcome) welcome.remove();
-
-  const msg = document.createElement("div");
-  msg.className = `chat-msg chat-msg-${type}`;
-  msg.innerHTML = content;
-  container.appendChild(msg);
-  container.scrollTop = container.scrollHeight;
-  return msg;
+  container.appendChild(bubbleEl);
+  const thread = document.getElementById("chat-thread");
+  if (thread) thread.scrollTop = thread.scrollHeight;
+  return bubbleEl;
 }
 
 function showTypingIndicator() {
   const container = document.getElementById("chat-messages");
   if (!container) return null;
-  const typing = document.createElement("div");
-  typing.className = "chat-typing chat-msg chat-msg-ai";
-  typing.id = "chat-typing-indicator";
-  typing.innerHTML = `
-    <div class="chat-msg-avatar" style="background:var(--accent-bg);color:var(--accent)">🧠</div>
-    <div class="chat-msg-bubble" style="display:flex;align-items:center;">
-        <div class="typing-indicator" style="display:flex;gap:4px">
-            <div class="typing-dot" style="width:6px;height:6px;border-radius:50%;background:var(--text-dim);animation:bounce 1.4s infinite ease-in-out both;"></div>
-            <div class="typing-dot" style="width:6px;height:6px;border-radius:50%;background:var(--text-dim);animation:bounce 1.4s infinite ease-in-out both;animation-delay:-0.32s"></div>
-            <div class="typing-dot" style="width:6px;height:6px;border-radius:50%;background:var(--text-dim);animation:bounce 1.4s infinite ease-in-out both;animation-delay:-0.16s"></div>
-        </div>
-    </div>`;
-  container.appendChild(typing);
-  container.scrollTop = container.scrollHeight;
-  return typing;
+  const bubble = window.createTypingBubble();
+  container.appendChild(bubble);
+  const thread = document.getElementById("chat-thread");
+  if (thread) thread.scrollTop = thread.scrollHeight;
+  return bubble;
 }
 
 function removeTypingIndicator() {
@@ -71,9 +62,7 @@ async function ragSearch(queryOverride) {
     if(typeof renderHistoryList !== 'undefined') renderHistoryList();
   }
 
-  addChatMessage("user", `
-    <div class="chat-msg-avatar">👤</div>
-    <div class="chat-msg-bubble">${escapeHtml(query)}</div>`);
+  appendBubble(window.createUserBubble(query));
 
   input.value = "";
   if (input.style.height) input.style.height = "auto";
@@ -96,9 +85,6 @@ async function ragSearch(queryOverride) {
       answerContent = escapeHtml(data.error);
     } else if (data.answer) {
       answerContent = formatAnswer(data.answer);
-      if (data.answer_model) {
-        answerContent += `<div style="margin-top:8px;font-size:.7rem;color:var(--text-dim);">Answered by ${escapeHtml(data.answer_model)}</div>`;
-      }
     } else if (data.answer_error) {
       answerContent = `<span style="color:var(--color-error);">LLM unavailable: ${escapeHtml(data.answer_error)}</span><br><em style="font-size:.8rem;color:var(--text-dim);">Make sure Ollama is running.</em>`;
     } else if (!data.results || data.results.length === 0) {
@@ -107,35 +93,21 @@ async function ragSearch(queryOverride) {
       answerContent = "I found relevant documents but couldn't generate an answer (LLM unavailable).";
     }
 
-    let sourcesHtml = "";
-    if (data.results && data.results.length > 0) {
-      window._lastSourceResults = data.results;
-      sourcesHtml = `
-        <div style="margin-top:16px; display:flex; gap:8px;">
-            <button class="btn btn-sm btn-outline chat-sources-trigger"
-                    style="font-size:0.75rem; padding:6px 14px; border-radius:12px; display:flex; align-items:center; gap:6px; background:rgba(108,92,231,0.05);"
-                    onclick="window.openSourcesPanel()">
-                <i class="fas fa-stream" style="font-size:0.8rem; color:var(--accent);"></i>
-                View ${data.total || data.results.length} References
-            </button>
-        </div>`;
-    }
+    const results = (data.results && data.results.length > 0) ? data.results : null;
+    if (results) window._lastSourceResults = results;
 
-    addChatMessage("ai", `
-      <div class="chat-msg-avatar" style="background:var(--accent-bg);color:var(--accent)">🧠</div>
-      <div class="chat-msg-bubble">
-        <div class="ai-answer-container">${answerContent}</div>
-        ${sourcesHtml}
-      </div>`);
+    appendBubble(window.createAssistantBubble(answerContent, {
+      model: data.answer_model || null,
+      results: results,
+      totalResults: data.total || (results ? results.length : 0),
+    }));
 
     // Backend saved everything — no sessionAddMessage needed
 
   } catch (err) {
     removeTypingIndicator();
     const errorMsg = err.name === "AbortError" ? "Request timed out." : "Search failed: " + err.message;
-    addChatMessage("ai chat-msg-error", `
-      <div class="chat-msg-avatar" style="background:var(--accent-bg);color:var(--accent)">🧠</div>
-      <div class="chat-msg-bubble">${escapeHtml(errorMsg)}</div>`);
+    appendBubble(window.createErrorBubble(errorMsg));
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -448,12 +420,19 @@ function renderInspectorGrouped(files) {
     
     list.innerHTML = files.map((f, idx) => {
         const chunkCount = f.chunks?.length || 0;
-        const statusClass = chunkCount > 0 ? "badge-status-ok" : "badge-status-warn";
-        const statusText = chunkCount > 0 ? `${chunkCount} chunks` : "EMPTY / ERROR";
+        let statusClass = chunkCount > 0 ? "badge-status-ok" : "badge-status-warn";
+        let statusText = chunkCount > 0 ? `${chunkCount} chunks` : "EMPTY / ERROR";
+
+        if (f.is_disabled) {
+            statusClass = "badge-status-warn";
+            statusText = "DISABLED";
+        }
 
         // Summary badge
         let summaryBadge;
-        if (f.has_summary) {
+        if (f.is_disabled) {
+            summaryBadge = `<span class="badge-source badge-local" style="opacity:0.5;">Skipped</span>`;
+        } else if (f.has_summary) {
             summaryBadge = `<button class="summary-badge has-summary" onclick="event.stopPropagation(); window.toggleInspectorRow(${idx})" title="View summary">
                 <i class="fas fa-check-circle"></i> Generated
             </button>`;
@@ -465,7 +444,7 @@ function renderInspectorGrouped(files) {
 
         // Summary display block (shown inside expansion row)
         let summaryBlock = '';
-        if (f.has_summary && f.summary_text) {
+        if (!f.is_disabled && f.has_summary && f.summary_text) {
             summaryBlock = `
                 <div class="summary-display" id="summary-block-${idx}">
                     <div class="summary-display-header">
@@ -476,8 +455,8 @@ function renderInspectorGrouped(files) {
         }
         
         return `
-            <tr class="file-row" onclick="window.toggleInspectorRow(${idx})">
-                <td style="text-align:center;"><i class="fas fa-chevron-right expander-icon" id="exp-icon-${idx}"></i></td>
+            <tr class="file-row" ${!f.is_disabled ? `onclick="window.toggleInspectorRow(${idx})"` : ''} style="${f.is_disabled ? 'opacity: 0.4; cursor: not-allowed; background: rgba(0,0,0,0.1);' : ''}">
+                <td style="text-align:center;">${!f.is_disabled ? `<i class="fas fa-chevron-right expander-icon" id="exp-icon-${idx}"></i>` : '<i class="fas fa-ban" style="color:var(--text-dim);font-size:0.8rem;"></i>'}</td>
                 <td style="font-weight:600; padding-left: 0;">${escapeHtml(f.name)}</td>
                 <td><span class="badge-source badge-${f.source}">${f.source}</span></td>
                 <td><span class="badge-status ${statusClass}">${statusText}</span></td>
@@ -489,7 +468,7 @@ function renderInspectorGrouped(files) {
                     <div class="chunk-container" onclick="event.stopPropagation()">
                         ${summaryBlock}
                         <div id="summary-inline-${idx}"></div>
-                        ${f.chunks.map((c, cIdx) => `
+                        ${(!f.is_disabled && f.chunks) ? f.chunks.map((c, cIdx) => `
                             <div class="chunk-item">
                                 <div class="chunk-meta">
                                     <span>Snippet #${cIdx + 1}${c.section ? ` · ${escapeHtml(c.section)}` : ''}</span>
@@ -497,8 +476,8 @@ function renderInspectorGrouped(files) {
                                 </div>
                                 <div class="chunk-content-raw">${escapeHtml(c.text)}</div>
                             </div>
-                        `).join("")}
-                        ${chunkCount === 0 ? '<div style="padding:10px; opacity:0.5; font-size:0.8rem;">Potential processing failure: No semantic chunks found.</div>' : ''}
+                        `).join("") : ''}
+                        ${(!f.is_disabled && chunkCount === 0) ? '<div style="padding:10px; opacity:0.5; font-size:0.8rem;">Potential processing failure: No semantic chunks found.</div>' : ''}
                     </div>
                 </td>
             </tr>

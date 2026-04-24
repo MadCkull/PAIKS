@@ -46,7 +46,12 @@
   --input-focus: var(--accent);
 
   /* Bubbles */
-  --bubble-user: rgba(255, 255, 255, 0.06);
+  --bubble-user-bg: rgba(129, 140, 248, 0.06);
+  --bubble-user-border: linear-gradient(135deg, rgba(129,140,248,0.18), rgba(168,85,247,0.12));
+  --bubble-ai-bg: rgba(255, 255, 255, 0.025);
+  --bubble-ai-border: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(129,140,248,0.10));
+  --bubble-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  --bubble-edge-glow: rgba(129, 140, 248, 0.45);
 
   /* Sidebar */
   --sidebar-bg: rgba(15, 17, 26, 0.6);
@@ -97,7 +102,12 @@
   --input-border: rgba(0, 0, 0, 0.1);
   --input-focus: var(--accent);
 
-  --bubble-user: rgba(0, 0, 0, 0.04);
+  --bubble-user-bg: rgba(108, 92, 231, 0.08);
+  --bubble-user-border: linear-gradient(135deg, rgba(108,92,231,0.25), rgba(168,85,247,0.15));
+  --bubble-ai-bg: rgba(255, 255, 255, 0.65);
+  --bubble-ai-border: linear-gradient(135deg, rgba(0,0,0,0.12), rgba(108,92,231,0.15));
+  --bubble-shadow: 0 8px 24px rgba(0, 0, 0, 0.06), 0 2px 8px rgba(0, 0, 0, 0.04);
+  --bubble-edge-glow: rgba(99, 102, 241, 0.5);
 
   --sidebar-bg: rgba(248, 250, 252, 0.8);
   --sidebar-border: var(--glass-border);
@@ -254,12 +264,16 @@ a { color: inherit; text-decoration: none; }
 .app-bg {
   position: fixed; inset: 0; z-index: -1;
   background:
-    radial-gradient(ellipse 80% 60% at 50% -20%, rgba(108,92,231,.06), transparent 70%),
+    radial-gradient(circle at 15% 25%, rgba(255, 255, 255, 0.5) 0%, transparent 45%),
+    radial-gradient(circle at 85% 75%, rgba(0, 0, 0, 0.03) 0%, transparent 45%),
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.3) 0%, transparent 60%),
     var(--bg-app);
 }
 [data-theme="dark"] .app-bg {
   background:
-    radial-gradient(ellipse 80% 60% at 50% -20%, rgba(108,92,231,.12), transparent 70%),
+    radial-gradient(circle at 15% 25%, rgba(255, 255, 255, 0.02) 0%, transparent 45%),
+    radial-gradient(circle at 85% 75%, rgba(0, 0, 0, 0.3) 0%, transparent 45%),
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.015) 0%, transparent 60%),
     var(--bg-main);
 }
 

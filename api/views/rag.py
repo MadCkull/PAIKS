@@ -591,6 +591,29 @@ def debug_indices(request):
     fetch_all_from_collection(LOCAL_COLLECTION)
     fetch_all_from_collection(CLOUD_COLLECTION)
     
+    # Cross-reference with DocumentTrack to find disabled files
+    from api.models import DocumentTrack
+    disabled_file_ids = set(DocumentTrack.objects.filter(is_selected=False).values_list('file_id', flat=True))
+    
+    for fid, data in grouped_data.items():
+        check_fid = fid
+        if data["source"] == "cloud" and not fid.startswith("cloud__"):
+            check_fid = f"cloud__{fid}"
+
+        if check_fid in disabled_file_ids:
+            data["is_disabled"] = True
+            data["sync_status"] = "disabled"
+        else:
+            data["is_disabled"] = False
+            # Check if it was explicitly marked disabled despite being in Qdrant
+            try:
+                doc = DocumentTrack.objects.get(file_id=check_fid)
+                if doc.sync_status == 'disabled':
+                    data["is_disabled"] = True
+            except:
+                pass
+    
+    
     sort_priority = {"local": 0, "cloud": 1}
     result_list = sorted(
         grouped_data.values(), 
@@ -736,18 +759,36 @@ def wipe_db(request):
         
         client = get_qdrant_client()
         
-        # 1. Delete Qdrant collections
-        if client.collection_exists(CLOUD_COLLECTION):
-            client.delete_collection(CLOUD_COLLECTION)
-        if client.collection_exists(LOCAL_COLLECTION):
-            client.delete_collection(LOCAL_COLLECTION)
-            
-        # 2. Re-create empty collections (handled automatically by get_vector_store, but we'll force it here)
-        # Actually, let's just leave it to the next ingest to create them.
-        
-        # 3. Clear database models
-        DocumentTrack.objects.all().delete()
-        SyncJob.objects.all().delete()
+        # Check if a specific source was requested
+        source = None
+        if request.body:
+            try:
+                payload = json.loads(request.body)
+                source = payload.get('source')
+            except Exception:
+                pass
+                
+        if source == 'cloud':
+            if client.collection_exists(CLOUD_COLLECTION):
+                client.delete_collection(CLOUD_COLLECTION)
+            DocumentTrack.objects.filter(source='cloud').delete()
+            from api.services.config import SYNC_CACHE_PATH
+            if SYNC_CACHE_PATH.exists():
+                SYNC_CACHE_PATH.unlink()
+        elif source == 'local':
+            if client.collection_exists(LOCAL_COLLECTION):
+                client.delete_collection(LOCAL_COLLECTION)
+            DocumentTrack.objects.filter(source='local').delete()
+        else:
+            # 1. Delete Qdrant collections
+            if client.collection_exists(CLOUD_COLLECTION):
+                client.delete_collection(CLOUD_COLLECTION)
+            if client.collection_exists(LOCAL_COLLECTION):
+                client.delete_collection(LOCAL_COLLECTION)
+                
+            # 3. Clear database models
+            DocumentTrack.objects.all().delete()
+            SyncJob.objects.all().delete()
         
         # 4. Refresh stats for UI
         try:
@@ -755,7 +796,7 @@ def wipe_db(request):
         except Exception:
             pass
             
-        return JsonResponse({"status": "wiped", "message": "Vector database and tracking history wiped successfully"})
+        return JsonResponse({"status": "wiped", "message": f"Vector database {'wiped successfully' if not source else source + ' wiped successfully'}"})
     except Exception as e:
         logger.error(f"Failed to wipe vector DB: {e}")
         return JsonResponse({"error": str(e)}, status=500)

@@ -92,6 +92,40 @@ window.PAIKSEventBus = (function() {
 })();
 
 
+// ── Local Mouse Tracking for Glass Effects ───────────────────
+// Calculates mouse position relative to each bubble individually,
+// completely bypassing CSS 'background-attachment: fixed' offset bugs.
+let _glassTicking = false;
+document.addEventListener('mousemove', (e) => {
+  if (!_glassTicking) {
+    requestAnimationFrame(() => {
+      // We target .cb__body because that's where the ::before glow pseudo-element lives
+      const bubbles = document.querySelectorAll('.cb__body');
+      
+      // Phase 1: READ (Avoids layout thrashing by reading all bounds first)
+      const rects = [];
+      for (let i = 0; i < bubbles.length; i++) {
+        rects.push(bubbles[i].getBoundingClientRect());
+      }
+      
+      // Phase 2: WRITE
+      for (let i = 0; i < bubbles.length; i++) {
+        const rect = rects[i];
+        
+        // Calculate exact coordinates local to THIS specific bubble
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        bubbles[i].style.setProperty('--mouse-x', `${x}px`);
+        bubbles[i].style.setProperty('--mouse-y', `${y}px`);
+      }
+      
+      _glassTicking = false;
+    });
+    _glassTicking = true;
+  }
+});
+
 // ── Page Initialization ─────────────────────────────────────────
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -159,9 +193,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     console.warn("Failed to load global settings from backend", e);
   }
 
-  // Remove auth guard immediately  -  don't wait for anything
-  if (typeof removeAuthGuard === "function") removeAuthGuard();
-
   // ── Start Global SSE Connection ────────────────────────────
   // This single connection replaces all polling for drive stats,
   // RAG status, LLM status, and sync progress.
@@ -172,14 +203,39 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const safeCall = async (fn) => { try { await fn(); } catch(e) { console.warn("Init failed:", e.message); } };
 
+  // Track initialization time for minimum loading screen duration
+  const initStartTime = Date.now();
+
   if (document.getElementById("chat-thread")) {
     // These fetch once on load to prime the UI before SSE starts pushing.
     // Once SSE events start arriving, they'll keep the UI current automatically.
-    safeCall(() => typeof loadRagStatus === "function" && loadRagStatus());
-    safeCall(() => typeof loadLLMStatus === "function" && loadLLMStatus());
-    safeCall(() => typeof updateDashboardStats === "function" && updateDashboardStats());
-    safeCall(() => typeof updateToolbarContext === "function" && updateToolbarContext());
+    await safeCall(async () => {
+      if (typeof loadRagStatus === "function") await loadRagStatus();
+    });
+    await safeCall(async () => {
+      if (typeof loadLLMStatus === "function") await loadLLMStatus();
+    });
+    await safeCall(async () => {
+      if (typeof updateDashboardStats === "function") await updateDashboardStats();
+    });
+    await safeCall(async () => {
+      if (typeof updateToolbarContext === "function") await updateToolbarContext();
+    });
     // Settings modal loads on-demand when opened, not on boot
+  }
+
+  // Enforce minimum 3 second loading screen
+  const elapsed = Date.now() - initStartTime;
+  if (elapsed < 3000) {
+    await new Promise(r => setTimeout(r, 3000 - elapsed));
+  }
+
+  // Transition from loading state to normal state
+  if (typeof setLoading === "function") setLoading(false);
+  const appElement = document.getElementById("app");
+  if (appElement) {
+    appElement.style.opacity = "1";
+    appElement.style.pointerEvents = "auto";
   }
 
   // ── Google Drive connected notification ────────────────────

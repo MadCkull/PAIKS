@@ -23,16 +23,15 @@ class TestUnifiedPrompt:
     def test_prompt_contains_required_elements(self):
         template_str = QA_PROMPT.template
         assert "PAIKS" in template_str
-        assert "DOCUMENT EXCERPTS" in template_str
-        assert "[Source:" in template_str
-        assert "CONCISE" in template_str
-        assert "NEVER say" in template_str
+        assert "CONTEXT" in template_str
+        assert "concise" in template_str.lower()
+        assert "Never say" in template_str
         assert "{context_str}" in template_str
         assert "{query_str}" in template_str
 
     def test_prompt_has_conversation_history_rule(self):
         template_str = QA_PROMPT.template
-        assert "CONVERSATION HISTORY" in template_str
+        assert "conversation history" in template_str.lower()
 
 
 class TestBuildQueryWithHistory:

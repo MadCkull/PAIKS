@@ -347,7 +347,7 @@
   .hero h1 { font-size: 2rem; }
   .hero { padding: 40px 20px 36px; }
   .chat-container { max-height: 62vh; min-height: 400px; }
-  .chat-msg-bubble { max-width: 88%; }
+  .cb--user .cb__body { max-width: 88%; }
   .chat-suggestions { flex-direction: column; }
   .llm-config-right { flex-direction: column; align-items: stretch; }
   .llm-url-input { width: 100%; }

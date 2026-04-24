@@ -18,9 +18,9 @@
     <!-- Modular CSS Architecture -->
     <link
       rel="stylesheet"
-      href="{% static 'assistant/css/variables.css' %}?v=5"
+      href="{% static 'assistant/css/variables.css' %}?v=8"
     />
-    <link rel="stylesheet" href="{% static 'assistant/css/layout.css' %}?v=5" />
+    <link rel="stylesheet" href="{% static 'assistant/css/layout.css' %}?v=6" />
     <link
       rel="stylesheet"
       href="{% static 'assistant/css/components.css' %}?v=5"
@@ -29,7 +29,8 @@
       rel="stylesheet"
       href="{% static 'assistant/css/settings.css' %}?v=3"
     />
-    <link rel="stylesheet" href="{% static 'assistant/css/chat.css' %}?v=5" />
+    <link rel="stylesheet" href="{% static 'assistant/css/chat.css' %}?v=6" />
+    <link rel="stylesheet" href="{% static 'assistant/css/bubbles.css' %}?v=4" />
     <link rel="stylesheet" href="{% static 'assistant/css/modals.css' %}?v=5" />
     <link
       rel="stylesheet"
@@ -39,6 +40,7 @@
       rel="stylesheet"
       href="{% static 'assistant/css/references.css' %}?v=5"
     />
+    <link rel="stylesheet" href="{% static 'assistant/css/system-core.css' %}?v=1" />
     <link
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
@@ -54,26 +56,10 @@
   </head>
 
   <body>
-    <div class="app-bg"></div>
+    {% include "assistant/components/_system_bg.html" %}
     {% csrf_token %}
 
-    <!-- Auth guard overlay -->
-    <div
-      id="auth-guard"
-      style="
-        position: fixed;
-        inset: 0;
-        z-index: 9999;
-        background: var(--bg-deep);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      "
-    >
-      <div class="spinner spinner-lg"></div>
-    </div>
-
-    <div id="app">
+    <div id="app" style="opacity: 0; pointer-events: none; transition: opacity 0.6s ease;">
       <!-- ── SIDEBAR ─────────────────────────────────────────────────── -->
       {% include "assistant/components/_sidebar.html" %}
       <!-- ── MAIN CONTENT ──────────────────────────────────────────────── -->
@@ -114,7 +100,7 @@
     </script>
 
     <!-- Modular JS Architecture -->
-    <script src="{% static 'assistant/js/app.js' %}?v=3"></script>
+    <script src="{% static 'assistant/js/app.js' %}?v=7"></script>
     <script src="{% static 'assistant/js/config.js' %}"></script>
     <script src="{% static 'assistant/js/utils.js' %}"></script>
     <script src="{% static 'assistant/js/auth.js' %}"></script>
@@ -124,6 +110,7 @@
     <script src="{% static 'assistant/js/dashboard.js' %}"></script>
     <script src="{% static 'assistant/js/settings.js' %}?v=2"></script>
     <script src="{% static 'assistant/js/toolbar.js' %}?v=5"></script>
+    <script src="{% static 'assistant/js/system-core.js' %}?v=1"></script>
     {% block extra_js %}{% endblock %}
   </body>
 </html>

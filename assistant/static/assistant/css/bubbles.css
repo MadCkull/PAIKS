@@ -1,0 +1,277 @@
+/* =========================================================================
+   bubbles.css — PAIKS Chat Bubble Component
+   Glassmorphic, accent-tinted, light/dark aware
+   ========================================================================= */
+
+/* ── Entry Animation ─────────────────────────────────────────────────────── */
+
+@keyframes cb-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── Base Bubble ─────────────────────────────────────────────────────────── */
+
+.cb {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  animation: cb-enter 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* ── User Bubble ─────────────────────────────────────────────────────────── */
+
+.cb--user {
+  justify-content: flex-end;
+}
+
+.cb--user .cb__avatar {
+  order: 2;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+  background: linear-gradient(135deg, var(--accent), #7c3aed);
+  color: #fff;
+  font-size: 0.72rem;
+  box-shadow: 0 2px 8px var(--accent-glow);
+}
+
+.cb--user .cb__body {
+  position: relative;
+  max-width: 75%;
+}
+
+/* Gradient border trick: pseudo-element behind with gradient bg, then inner with solid bg */
+.cb--user .cb__body::before,
+.cb--ai .cb__body::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  background: radial-gradient(
+    180px circle at var(--mouse-x, -1000px) var(--mouse-y, -1000px),
+    var(--bubble-edge-glow, var(--accent-glow)),
+    transparent 100%
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.cb--user .cb__body::before {
+  border-radius: 18px 18px 4px 18px;
+}
+
+@media (hover: none) {
+  .cb--user .cb__body::before {
+    background: var(--bubble-user-border);
+    background-attachment: scroll;
+  }
+}
+
+.cb--user .cb__content {
+  position: relative;
+  background: var(--bubble-user-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 18px 18px 4px 18px;
+  padding: 12px 18px;
+  box-shadow: var(--bubble-shadow);
+}
+
+.cb--user .cb__text {
+  font-size: 0.92rem;
+  line-height: 1.65;
+  color: var(--text-primary);
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* ── AI Bubble ───────────────────────────────────────────────────────────── */
+
+.cb--ai {
+  justify-content: flex-start;
+}
+
+.cb--ai .cb__avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+  background: transparent;
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.cb--ai .cb__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.cb--ai .cb__body {
+  position: relative;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 85%;
+}
+
+/* Border shape for AI bubble is already handled by shared pseudo-element block, just set border-radius here */
+.cb--ai .cb__body::before {
+  border-radius: 18px 18px 18px 4px;
+}
+
+@media (hover: none) {
+  .cb--ai .cb__body::before {
+    background: var(--bubble-ai-border);
+    background-attachment: scroll;
+  }
+}
+
+.cb--ai .cb__content {
+  position: relative;
+  background: var(--bubble-ai-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 18px 18px 18px 4px;
+  padding: 14px 18px;
+  box-shadow: var(--bubble-shadow);
+}
+
+.cb--ai .cb__text {
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: var(--text-primary);
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Markdown content inside AI bubble */
+.cb--ai .cb__text p { margin-bottom: 10px; }
+.cb--ai .cb__text p:last-child { margin-bottom: 0; }
+.cb--ai .cb__text ul,
+.cb--ai .cb__text ol { padding-left: 20px; margin-bottom: 10px; }
+.cb--ai .cb__text li { margin-bottom: 4px; }
+.cb--ai .cb__text strong { font-weight: 600; }
+
+.cb--ai .cb__text code {
+  background: rgba(0, 0, 0, 0.25);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.88em;
+  color: var(--accent-hover);
+}
+[data-theme="light"] .cb--ai .cb__text code {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--accent);
+}
+
+/* ── Model badge (outside bubble) ────────────────────────────────────────── */
+
+.cb__model-badge {
+  margin-top: 6px;
+  margin-left: 2px;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  opacity: 0.8;
+}
+
+/* ── References Separator & Button ───────────────────────────────────────── */
+
+.cb__refs-divider {
+  height: 1px;
+  background: var(--glass-border);
+  margin: 14px 0 10px;
+  opacity: 0.6;
+}
+
+.cb__refs {
+  display: flex;
+  gap: 8px;
+}
+
+.cb__refs-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--accent-light, var(--accent));
+  background: var(--accent-bg);
+  border: 1px solid rgba(108, 92, 231, 0.12);
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+.cb__refs-btn:hover {
+  background: rgba(108, 92, 231, 0.12);
+  border-color: rgba(108, 92, 231, 0.22);
+  transform: translateY(-1px);
+}
+.cb__refs-btn i {
+  font-size: 0.78rem;
+  color: var(--accent);
+}
+
+/* ── Typing Indicator ────────────────────────────────────────────────────── */
+
+.cb--typing .cb__dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 0;
+}
+
+.cb--typing .cb__dots span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  animation: cb-typing-bounce 1.4s infinite ease-in-out both;
+}
+.cb--typing .cb__dots span:nth-child(1) { animation-delay: -0.32s; }
+.cb--typing .cb__dots span:nth-child(2) { animation-delay: -0.16s; }
+.cb--typing .cb__dots span:nth-child(3) { animation-delay: 0s; }
+
+@keyframes cb-typing-bounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.3; }
+  40%           { transform: scale(1);   opacity: 0.9; }
+}
+
+/* ── Error Bubble ────────────────────────────────────────────────────────── */
+
+.cb--error .cb__content {
+  background: rgba(239, 68, 68, 0.06);
+  border: 1px solid rgba(239, 68, 68, 0.18);
+}
+.cb--error .cb__content::before { display: none; }
+.cb--error .cb__body::before {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(239, 68, 68, 0.08));
+}
+
+.cb--error .cb__text {
+  color: var(--color-error, #f87171);
+}
+

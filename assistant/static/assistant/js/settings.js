@@ -235,13 +235,26 @@ window.confirmUniversalPicker = function() {
       body: JSON.stringify({ folder_id: id, folder_name: name })
     })
     .then(r => r.json())
-    .then((data) => {
+    .then(async (data) => {
        if (data.error) throw new Error(data.error);
+
+       // Wipe the old cloud database
+       try {
+         await fetch(`${API_BASE}/rag/wipe-db`, {
+           method: "POST",
+           headers: { "Content-Type": "application/json", "X-CSRFToken": getCsrfToken() },
+           body: JSON.stringify({ source: "cloud" })
+         });
+       } catch (e) {
+         console.error("Failed to wipe old cloud DB", e);
+       }
+
        if (window.appSettings && window.appSettings.sources) {
          window.appSettings.sources.drive_folder_id = id;
          window.appSettings.sources.drive_folder_name = name;
        }
        if (typeof window.revalidateFileTree === "function") window.revalidateFileTree();
+       updateSettingsModal(); // Refresh UI to update metrics
        showToast(`Drive folder set: ${name}`, "success");
     })
     .catch(() => showToast("Failed to save folder", "error"));
@@ -764,12 +777,24 @@ window.confirmLocalPicker = async function() {
     const data = await res.json();
     if (data.error) throw new Error(data.error);
 
+    // Wipe the old local database
+    try {
+      await fetch(`${API_BASE}/rag/wipe-db`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": getCsrfToken() },
+        body: JSON.stringify({ source: "local" })
+      });
+    } catch (e) {
+      console.error("Failed to wipe old local DB", e);
+    }
+
     window.appSettings = data.settings || window.appSettings;
     if (typeof window.revalidateFileTree === "function") window.revalidateFileTree();
 
     const pathText = document.getElementById("settings-local-folder");
     closeModal("local-picker-overlay");
     updateSettingsModal();
+    showToast("Local folder set successfully", "success");
   } catch (err) {
     showToast("Failed to set root: " + err.message, "error");
   }

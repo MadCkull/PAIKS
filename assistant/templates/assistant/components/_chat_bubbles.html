@@ -1,0 +1,120 @@
+{% load static %}
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     Chat Bubble Component — JS Factory Functions
+     Creates user/AI/typing/error bubble DOM elements.
+     Include once in home.html; call functions from chat.js & sessions.js.
+     ═══════════════════════════════════════════════════════════════════════════ -->
+
+<script>
+(function () {
+  const LOGO_SRC = "{% static 'assets/PAIKS_Logo.png' %}";
+
+  /**
+   * Create a user message bubble.
+   * @param {string} text — raw text (will be escaped)
+   * @returns {HTMLElement}
+   */
+  window.createUserBubble = function (text) {
+    const el = document.createElement('div');
+    el.className = 'cb cb--user';
+    el.innerHTML =
+      '<div class="cb__avatar"><i class="fas fa-user"></i></div>' +
+      '<div class="cb__body"><div class="cb__content">' +
+        '<p class="cb__text">' + escapeHtml(text) + '</p>' +
+      '</div></div>';
+    return el;
+  };
+
+  /**
+   * Create an AI message bubble.
+   * @param {string} answerHtml — pre-formatted HTML for the answer
+   * @param {object} opts
+   * @param {string}  [opts.model]        — model name shown outside bubble
+   * @param {Array}   [opts.results]      — source results array (for references button)
+   * @param {number}  [opts.totalResults] — total count label
+   * @returns {HTMLElement}
+   */
+  window.createAssistantBubble = function (answerHtml, opts) {
+    opts = opts || {};
+    const el = document.createElement('div');
+    el.className = 'cb cb--ai';
+
+    // Avatar
+    let avatarHtml =
+      '<div class="cb__avatar">' +
+        '<img src="' + LOGO_SRC + '" alt="PAIKS" width="30" height="30" loading="lazy">' +
+      '</div>';
+
+    // References section (inside bubble)
+    let refsHtml = '';
+    if (opts.results && opts.results.length > 0) {
+      const count = opts.totalResults || opts.results.length;
+      refsHtml =
+        '<div class="cb__refs-divider"></div>' +
+        '<div class="cb__refs">' +
+          '<button class="cb__refs-btn" data-refs="true">' +
+            '<i class="fas fa-stream"></i> View ' + count + ' References' +
+          '</button>' +
+        '</div>';
+    }
+
+    el.innerHTML =
+      avatarHtml +
+      '<div class="cb__body"><div class="cb__content">' +
+        '<div class="cb__text ai-answer-container">' + answerHtml + '</div>' +
+        refsHtml +
+      '</div></div>';
+
+    // Bind references button
+    if (opts.results && opts.results.length > 0) {
+      const btn = el.querySelector('.cb__refs-btn');
+      if (btn) {
+        const captured = opts.results;
+        btn.addEventListener('click', function () {
+          window._lastSourceResults = captured;
+          window.openSourcesPanel();
+        });
+      }
+    }
+
+    return el;
+  };
+
+  /**
+   * Create a typing indicator bubble.
+   * @returns {HTMLElement}
+   */
+  window.createTypingBubble = function () {
+    const el = document.createElement('div');
+    el.className = 'cb cb--ai cb--typing';
+    el.id = 'chat-typing-indicator';
+    el.innerHTML =
+      '<div class="cb__avatar">' +
+        '<img src="' + LOGO_SRC + '" alt="PAIKS" width="30" height="30" loading="lazy">' +
+      '</div>' +
+      '<div class="cb__body"><div class="cb__content">' +
+        '<div class="cb__dots"><span></span><span></span><span></span></div>' +
+      '</div></div>';
+    return el;
+  };
+
+  /**
+   * Create an error message bubble.
+   * @param {string} errorText — raw error text (will be escaped)
+   * @returns {HTMLElement}
+   */
+  window.createErrorBubble = function (errorText) {
+    const el = document.createElement('div');
+    el.className = 'cb cb--ai cb--error';
+    el.innerHTML =
+      '<div class="cb__avatar">' +
+        '<img src="' + LOGO_SRC + '" alt="PAIKS" width="30" height="30" loading="lazy">' +
+      '</div>' +
+      '<div class="cb__body"><div class="cb__content">' +
+        '<p class="cb__text">' + escapeHtml(errorText) + '</p>' +
+      '</div></div>';
+    return el;
+  };
+
+})();
+</script>
