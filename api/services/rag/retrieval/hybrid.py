@@ -5,6 +5,7 @@ from llama_index.core.retrievers import AutoMergingRetriever
 from llama_index.core.storage.docstore import SimpleDocumentStore
 
 logger = logging.getLogger(__name__)
+from llama_index.core.vector_stores.types import MetadataFilters, ExactMatchFilter
 
 def get_base_retriever(index: VectorStoreIndex, top_k: int = 30) -> VectorIndexRetriever:
     """
@@ -14,9 +15,14 @@ def get_base_retriever(index: VectorStoreIndex, top_k: int = 30) -> VectorIndexR
     We fetch top_k=30 because this list will later be filtered by the reranker.
     """
     logger.debug(f"Initializing base VectorIndexRetriever with top_k={top_k}")
+    
+    # Strictly filter out any soft-disabled files from retrieval
+    filters = MetadataFilters(filters=[ExactMatchFilter(key="enabled", value=1)])
+    
     return VectorIndexRetriever(
         index=index,
         similarity_top_k=top_k,
+        filters=filters,
     )
 
 def get_hybrid_merging_retriever(base_retriever: VectorIndexRetriever, storage_context) -> AutoMergingRetriever:

@@ -241,9 +241,10 @@ def _index_worker():
                     client = get_qdrant_client()
                     col = CLOUD_COLLECTION if doc.source == "cloud" else LOCAL_COLLECTION
                     if client.collection_exists(col):
-                        client.delete(
+                        client.set_payload(
                             collection_name=col,
-                            points_selector=qmodels.FilterSelector(
+                            payload={"enabled": 0},
+                            points=qmodels.FilterSelector(
                                 filter=qmodels.Filter(
                                     must=[
                                         qmodels.FieldCondition(
@@ -296,9 +297,37 @@ def _index_worker():
                         if not os.path.exists(filepath):
                             raise Exception("File deleted before index started")
 
-                        # Clean old vectors
+                        current_hash = get_file_hash(filepath)
                         client = get_qdrant_client()
+                        
                         if client.collection_exists(LOCAL_COLLECTION):
+                            existing_pts, _ = client.scroll(
+                                collection_name=LOCAL_COLLECTION,
+                                scroll_filter=qmodels.Filter(
+                                    must=[qmodels.FieldCondition(key="file_id", match=qmodels.MatchValue(value=doc.file_id))]
+                                ),
+                                limit=1,
+                                with_payload=False,
+                                with_vectors=False
+                            )
+                            if existing_pts and doc.content_hash == current_hash:
+                                client.set_payload(
+                                    collection_name=LOCAL_COLLECTION,
+                                    payload={"enabled": 1},
+                                    points=qmodels.FilterSelector(
+                                        filter=qmodels.Filter(must=[qmodels.FieldCondition(key="file_id", match=qmodels.MatchValue(value=doc.file_id))])
+                                    )
+                                )
+                                doc.sync_status = "synced"
+                                doc.error_message = ""
+                                doc.save()
+                                job.status = 'completed'
+                                job.save()
+                                logger.info(f"{doc.name} unchanged, instantly re-enabled.")
+                                broadcast_event("sync_update", {"file_id": doc.file_id, "name": doc.name, "status": "synced"})
+                                _compute_and_broadcast_health()
+                                continue
+                            
                             client.delete(
                                 collection_name=LOCAL_COLLECTION,
                                 points_selector=qmodels.FilterSelector(
@@ -312,6 +341,9 @@ def _index_worker():
                                     )
                                 )
                             )
+
+                        doc.content_hash = current_hash
+                        doc.save()
 
                         file_dict = {
                             "id": doc.file_id,
@@ -332,8 +364,47 @@ def _index_worker():
 
                         fid = doc.file_id.replace("cloud__", "", 1)
                         
+                        try:
+                            # Must fetch mimeType and webViewLink dynamically for proper parsing
+                            meta = service.files().get(fileId=fid, fields="mimeType, webViewLink, modifiedTime").execute()
+                        except Exception as meta_e:
+                            logger.error(f"Failed to fetch metadata for {doc.name}: {meta_e}")
+                            meta = {}
+                            
+                        from dateutil.parser import parse as parse_date
+                        current_mod_time = None
+                        if "modifiedTime" in meta:
+                            current_mod_time = parse_date(meta["modifiedTime"])
+                            
                         client = get_qdrant_client()
                         if client.collection_exists(CLOUD_COLLECTION):
+                            existing_pts, _ = client.scroll(
+                                collection_name=CLOUD_COLLECTION,
+                                scroll_filter=qmodels.Filter(
+                                    must=[qmodels.FieldCondition(key="file_id", match=qmodels.MatchValue(value=fid))]
+                                ),
+                                limit=1,
+                                with_payload=False,
+                                with_vectors=False
+                            )
+                            if existing_pts and current_mod_time and doc.last_modified == current_mod_time:
+                                client.set_payload(
+                                    collection_name=CLOUD_COLLECTION,
+                                    payload={"enabled": 1},
+                                    points=qmodels.FilterSelector(
+                                        filter=qmodels.Filter(must=[qmodels.FieldCondition(key="file_id", match=qmodels.MatchValue(value=fid))])
+                                    )
+                                )
+                                doc.sync_status = "synced"
+                                doc.error_message = ""
+                                doc.save()
+                                job.status = 'completed'
+                                job.save()
+                                logger.info(f"{doc.name} unchanged, instantly re-enabled.")
+                                broadcast_event("sync_update", {"file_id": doc.file_id, "name": doc.name, "status": "synced"})
+                                _compute_and_broadcast_health()
+                                continue
+                                
                             client.delete(
                                 collection_name=CLOUD_COLLECTION,
                                 points_selector=qmodels.FilterSelector(
@@ -348,14 +419,10 @@ def _index_worker():
                                 )
                             )
 
+                        if current_mod_time:
+                            doc.last_modified = current_mod_time
+                            doc.save()
 
-                        try:
-                            # Must fetch mimeType and webViewLink dynamically for proper parsing
-                            meta = service.files().get(fileId=fid, fields="mimeType, webViewLink").execute()
-                        except Exception as meta_e:
-                            logger.error(f"Failed to fetch metadata for {doc.name}: {meta_e}")
-                            meta = {}
-                            
                         file_dict = {
                             "id": fid,
                             "name": doc.name,

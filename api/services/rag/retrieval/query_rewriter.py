@@ -122,11 +122,34 @@ def get_known_files_from_qdrant() -> list[dict]:
     from api.services.rag.indexer import (
         get_qdrant_client, LOCAL_COLLECTION, CLOUD_COLLECTION,
     )
+    from api.services.config import load_app_settings
+    from qdrant_client.http import models as qmodels
+    
+    app_settings = load_app_settings()
+    src_cfg = app_settings.get("sources", {})
+    cloud_enabled = src_cfg.get("cloud_enabled", True)
+    local_enabled = src_cfg.get("local_enabled", True)
     
     client = get_qdrant_client()
     seen = {}  # file_id -> dict
     
-    for col_name in [LOCAL_COLLECTION, CLOUD_COLLECTION]:
+    collections_to_search = []
+    if local_enabled:
+        collections_to_search.append(LOCAL_COLLECTION)
+    if cloud_enabled:
+        collections_to_search.append(CLOUD_COLLECTION)
+    
+    # Filter to only return enabled documents
+    scroll_filter = qmodels.Filter(
+        must=[
+            qmodels.FieldCondition(
+                key="enabled",
+                match=qmodels.MatchValue(value=1)
+            )
+        ]
+    )
+    
+    for col_name in collections_to_search:
         if not client.collection_exists(col_name):
             continue
         try:
@@ -134,6 +157,7 @@ def get_known_files_from_qdrant() -> list[dict]:
             while True:
                 points, next_offset = client.scroll(
                     collection_name=col_name,
+                    scroll_filter=scroll_filter,
                     limit=100,
                     offset=next_offset,
                     with_payload=True,
