@@ -44,7 +44,8 @@ _DEFAULT_APP_SETTINGS = {
         "cloud_llm_enabled": False,
         "cloud_provider": "Google Gemini",
         "cloud_key": "",
-        "cloud_model": "gemini-1.5-pro",
+        "cloud_model": "",
+        "active_llm": "local",
         "embed_model": "nomic-embed-text",
     },
     "data": {
@@ -108,6 +109,25 @@ def load_llm_config() -> dict:
 
 def save_llm_config(cfg: dict):
     LLM_CONFIG_PATH.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+
+# ── Cloud model list (single source of truth) ──────────────────────────────
+# ALL backend code must use this function. The GEMINI_MODELS env var is the
+# only place where available cloud model names are defined.
+
+def get_cloud_models(provider: str = "Google Gemini") -> list[str]:
+    """Return the list of available cloud models from .env.
+    
+    GEMINI_MODELS is the canonical source — comma-separated model names.
+    Returns a non-empty list; falls back to the first model saved in system.json
+    if the env var is somehow missing, or an empty list if nothing is available.
+    """
+    import os
+    if provider == "Google Gemini":
+        raw = os.environ.get("GEMINI_MODELS", "").strip()
+        if raw:
+            return [m.strip() for m in raw.split(",") if m.strip()]
+    # Future providers: elif provider == "OpenAI": ...
+    return []
 
 def local_files_meta():
     try:

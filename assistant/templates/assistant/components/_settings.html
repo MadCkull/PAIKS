@@ -400,7 +400,7 @@
           <div class="mec-body mec-body-disabled" id="cloud-llm-body">
             <div class="form-group">
               <label class="form-label">Provider</label>
-              <select class="form-select" id="cloud-llm-provider" onchange="settingsTriggerAutosave()">
+              <select class="form-select" id="cloud-llm-provider" onchange="onCloudProviderChange();settingsTriggerAutosave()">
                 <option>Google Gemini</option>
                 <option>OpenAI</option>
                 <option>Anthropic Claude</option>
@@ -410,8 +410,29 @@
             </div>
             <div class="form-group">
               <label class="form-label">API Key</label>
-              <input type="password" class="form-input" id="cloud-llm-key"
-                placeholder="Paste your API key…" oninput="settingsTriggerAutosave()" autocomplete="off"/>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <input type="password" class="form-input" id="cloud-llm-key" style="flex:1;"
+                  placeholder="Paste your API key…" oninput="onCloudKeyInput()" autocomplete="off"/>
+                <button class="btn btn-sm btn-outline" id="btn-test-key" onclick="testCloudApiKey()"
+                  style="white-space:nowrap;padding:6px 12px;font-size:0.78rem;flex-shrink:0;" title="Test API key validity">
+                  <i class="fas fa-plug" style="font-size:0.7rem;"></i> Test Key
+                </button>
+              </div>
+              <!-- Key validation status — shown after Test Key or on save -->
+              <div id="cloud-key-status" style="display:none;margin-top:6px;font-size:0.75rem;display:flex;align-items:center;gap:6px;">
+                <i id="cloud-key-status-icon" class="fas fa-circle-check"></i>
+                <span id="cloud-key-status-text"></span>
+              </div>
+            </div>
+            <div class="form-group" id="cloud-model-group">
+              <label class="form-label" style="display:flex;align-items:center;gap:6px;">
+                Model
+                <span style="font-size:0.68rem;color:var(--text-dim);font-weight:400;">(from <code style="background:var(--glass-bg);padding:1px 4px;border-radius:3px;">GEMINI_MODELS</code> in .env)</span>
+              </label>
+              <select class="form-select" id="cloud-llm-model" onchange="settingsTriggerAutosave()">
+                <!-- Populated dynamically by updateSettingsModal() -->
+                <option value="">Loading…</option>
+              </select>
             </div>
           </div>
         </div>

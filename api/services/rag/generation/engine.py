@@ -10,31 +10,67 @@ from api.services.rag.generation.prompts import QA_PROMPT
 logger = logging.getLogger(__name__)
 
 
-def get_llm() -> Ollama:
+from llama_index.core.llms import LLM
+
+def get_llm() -> LLM:
+    """Return the correct LLM based on the persistent active_llm setting in system.json.
+    
+    The active_llm key is set to 'cloud' or 'local' by the frontend when the user
+    picks a model in the selector. Defaults to 'local' if not set.
+    """
+    from api.services.config import load_app_settings, load_llm_config
+    
+    settings = load_app_settings()
+    models_cfg = settings.get("models", {})
+    
+    # 'local' | 'cloud' — default to local for safety
+    active_llm = models_cfg.get("active_llm", "local")
+    
+    if active_llm == "cloud":
+        cloud_key = models_cfg.get("cloud_key", "").strip()
+        cloud_enabled = models_cfg.get("cloud_llm_enabled", False)
+        
+        if cloud_key and cloud_enabled:
+            from api.services.config import get_cloud_models
+            cloud_provider = models_cfg.get("cloud_provider", "Google Gemini")
+            cloud_models = get_cloud_models(cloud_provider)
+            # Use saved model only if it's still in the .env list; else use first
+            saved_model = models_cfg.get("cloud_model", "")
+            cloud_model = saved_model if saved_model in cloud_models else (cloud_models[0] if cloud_models else "")
+            
+            if not cloud_model:
+                logger.warning("active_llm=cloud but GEMINI_MODELS is empty — falling back to local Ollama")
+            elif cloud_provider == "Google Gemini":
+                from llama_index.llms.gemini import Gemini
+                logger.info(f"Using Cloud LLM (Gemini): {cloud_model}")
+                return Gemini(
+                    model=cloud_model,
+                    api_key=cloud_key,
+                    temperature=0.0
+                )
+            # Future: elif cloud_provider == "OpenAI": ...
+            # Future: elif cloud_provider == "Anthropic Claude": ...
+        else:
+            logger.warning("active_llm=cloud but cloud is disabled or no API key — falling back to local Ollama")
+    
+    # Fallback: Local Ollama
     cfg = load_llm_config()
     model = cfg.get("model", "llama3.2")
     base_url = cfg.get("base_url", "http://localhost:11434")
-    
-    logger.info(f"Connecting to generation LLM {model} at {base_url}")
+    logger.info(f"Using Local LLM (Ollama): {model} @ {base_url}")
     return Ollama(
         model=model,
         base_url=base_url,
         request_timeout=120.0,
         temperature=0.0,
-        context_window=4096,           # ADD
-        additional_kwargs={
-            "num_ctx": 4096            # ADD — tells Ollama server directly
-        }
+        context_window=4096,
+        additional_kwargs={"num_ctx": 4096}
     )
 
 
 def build_query_engine(merging_retriever, reranker_node_postprocessor) -> RetrieverQueryEngine:
-    """
-    Assembles the final intelligent RAG engine for factual document retrieval.
-    Uses the unified prompt that handles both RAG context and general knowledge.
-    """
+    """Assembles the final intelligent RAG engine for factual document retrieval."""
     llm = get_llm()
-    
     engine = RetrieverQueryEngine.from_args(
         retriever=merging_retriever,
         llm=llm,
