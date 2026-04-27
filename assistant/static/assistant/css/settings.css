@@ -1237,6 +1237,7 @@
   align-items: center;
   gap: 14px;
   border-bottom: 1px solid var(--border-dim);
+  position: relative;
 }
 .mec-icon {
   width: 44px;
